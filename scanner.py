@@ -3,7 +3,7 @@ import pandas as pd
 import streamlit as st
 
 # Title
-st.title("📈 Day Trading Scanner Prototype")
+st.title("📈 Tadis Day Trading Scanner Prototype")
 
 # Sidebar filters
 tickers = st.text_input("Enter tickers (comma separated)", "AAPL,TSLA,MSFT,NVDA,AMZN").split(",")
