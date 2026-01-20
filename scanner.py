@@ -16,7 +16,7 @@ def scan_stocks(tickers):
     results = []
     for ticker in tickers:
         stock = yf.Ticker(ticker.strip())
-        data = stock.history(period="1d", interval="1m")
+        data = stock.history(period="1d", interval="15m")
         if not data.empty:
             open_price = data['Open'].iloc[0]
             close_price = data['Close'].iloc[-1]
