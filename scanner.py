@@ -5,7 +5,7 @@ import smtplib
 from email.mime.text import MIMEText
 
 # --- CONFIG ---
-API_KEY = os.getenv("ALPHAVANTAGE_KEY")
+API_KEY = os.getenv("ALPHAVANTAGE_KEY")  # store securely in environment
 EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 EMAIL_TO   = os.getenv("EMAIL_TO")
@@ -17,9 +17,12 @@ def send_email_alert(subject, body, to_email):
     msg['From'] = EMAIL_USER
     msg['To'] = to_email
 
-    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-        server.login(EMAIL_USER, EMAIL_PASS)
-        server.sendmail(EMAIL_USER, to_email, msg.as_string())
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(EMAIL_USER, EMAIL_PASS)
+            server.sendmail(EMAIL_USER, to_email, msg.as_string())
+    except Exception as e:
+        st.error(f"Email alert failed: {e}")
 
 # --- FOREX DATA FUNCTION ---
 def get_forex_data(from_symbol, to_symbol):
@@ -30,25 +33,41 @@ def get_forex_data(from_symbol, to_symbol):
     return None
 
 # --- STREAMLIT UI ---
-st.title("💱 Forex Scanner with Alerts")
+st.title("💱 Multi-Pair Forex Scanner with Alerts")
 
-pair = st.text_input("Enter forex pair (e.g., EUR/USD)", "EUR/USD")
-base, quote = pair.split("/")
+pairs = ["USD/ZAR", "EUR/USD", "GBP/JPY", "USD/JPY"]  # core watchlist
+thresholds = {
+    "USD/ZAR": 18.00,
+    "EUR/USD": 1.10,
+    "GBP/JPY": 185.00,
+    "USD/JPY": 150.00
+}
 
-fx_data = get_forex_data(base, quote)
+results = []
+for pair in pairs:
+    base, quote = pair.split("/")
+    fx_data = get_forex_data(base, quote)
+    if fx_data:
+        rate = float(fx_data["5. Exchange Rate"])
+        results.append({"Pair": pair, "Rate": rate})
 
-if fx_data:
-    rate = float(fx_data["5. Exchange Rate"])
-    st.metric(label=f"{base}/{quote} Exchange Rate", value=rate)
+        # Display metric
+        st.metric(label=f"{pair} Exchange Rate", value=rate)
 
-    # Example alert: if rate moves above threshold
-    threshold = st.number_input("Alert if rate > ", value=1.10)
-    if rate > threshold:
-        alert_body = f"{base}/{quote} is trading at {rate}, above threshold {threshold}"
-        send_email_alert(f"Forex Alert: {base}/{quote}", alert_body, EMAIL_TO)
-        st.success("📧 Email alert sent!")
-else:
-    st.warning("No forex data available.")
+        # Alert if above threshold
+        if rate > thresholds[pair]:
+            alert_body = f"{pair} is trading at {rate}, above threshold {thresholds[pair]}"
+            send_email_alert(f"Forex Alert: {pair}", alert_body, EMAIL_TO)
+            st.success(f"📧 Email alert sent for {pair}!")
+    else:
+        st.warning(f"No data for {pair}")
+
+# Show summary table
+if results:
+    st.subheader("Scanner Results")
+    st.dataframe(results)
+
+
 
 
 
