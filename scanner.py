@@ -40,7 +40,3 @@ st.subheader("Scanner Results")
 st.dataframe(scanner_results)
 
 
-
-streamlit
-yfinance
-pandas
