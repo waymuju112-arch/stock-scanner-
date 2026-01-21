@@ -1,4 +1,4 @@
-# scanner_sp500_classic.py
+# scanner_forex.py
 
 import streamlit as st
 import pandas as pd
@@ -10,78 +10,79 @@ ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]
 POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
 DEBUG_MODE = st.secrets.get("ADMIN_DEBUG", False)
 
-# -------------------- Load Universe from CSV --------------------
+# -------------------- Load Forex Universe --------------------
 @st.cache_data(ttl=86400)
-def load_sp500_universe():
-    df = pd.read_csv("sp500.csv")
-    return df["Symbol"].dropna().unique().tolist()
+def load_forex_universe():
+    # Example CSV: forex_pairs.csv with column "Pair" like EURUSD, GBPUSD, USDJPY
+    df = pd.read_csv("forex_pairs.csv")
+    return df["Pair"].dropna().unique().tolist()
 
-# -------------------- Alpha Vantage Daily OHLC --------------------
+# -------------------- Alpha Vantage FX Daily --------------------
 @st.cache_data(ttl=1800)
-def fetch_alpha_daily(symbol):
+def fetch_fx_daily(pair):
+    from_symbol = pair[:3]
+    to_symbol = pair[3:]
     url = (
         f"https://www.alphavantage.co/query?"
-        f"function=TIME_SERIES_DAILY&symbol={symbol}&apikey={ALPHA_API_KEY}&outputsize=compact"
+        f"function=FX_DAILY&from_symbol={from_symbol}&to_symbol={to_symbol}&apikey={ALPHA_API_KEY}&outputsize=compact"
     )
     try:
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
-            data = r.json().get("Time Series (Daily)", {})
+            data = r.json().get("Time Series FX (Daily)", {})
             if data:
                 df = pd.DataFrame.from_dict(data, orient="index").astype(float)
                 df.index = pd.to_datetime(df.index)
                 return df.sort_index()
     except Exception as e:
         if DEBUG_MODE:
-            st.write(f"DEBUG ERROR Alpha Daily {symbol}:", e)
+            st.write(f"DEBUG ERROR FX Daily {pair}:", e)
     return pd.DataFrame()
 
-# -------------------- Alpha Vantage Intraday (Hourly) --------------------
+# -------------------- Alpha Vantage FX Intraday --------------------
 @st.cache_data(ttl=600)
-def fetch_alpha_intraday(symbol):
+def fetch_fx_intraday(pair):
+    from_symbol = pair[:3]
+    to_symbol = pair[3:]
     url = (
         f"https://www.alphavantage.co/query?"
-        f"function=TIME_SERIES_INTRADAY&symbol={symbol}&interval=60min&apikey={ALPHA_API_KEY}&outputsize=full"
+        f"function=FX_INTRADAY&from_symbol={from_symbol}&to_symbol={to_symbol}&interval=60min&apikey={ALPHA_API_KEY}&outputsize=full"
     )
     try:
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
-            data = r.json().get("Time Series (60min)", {})
+            data = r.json().get("Time Series FX (60min)", {})
             if data:
                 df = pd.DataFrame.from_dict(data, orient="index").astype(float)
                 df.index = pd.to_datetime(df.index)
                 return df.sort_index()
     except Exception as e:
         if DEBUG_MODE:
-            st.write(f"DEBUG ERROR Alpha Intraday {symbol}:", e)
+            st.write(f"DEBUG ERROR FX Intraday {pair}:", e)
     return pd.DataFrame()
 
 # -------------------- Compute Movers --------------------
-def compute_daily_movers(universe):
+def compute_fx_movers(universe):
     movers = []
     progress = st.progress(0)
-    for i, symbol in enumerate(universe):
-        df = fetch_alpha_daily(symbol)
-        if df.empty or len(df) < 20:
+    for i, pair in enumerate(universe):
+        df = fetch_fx_daily(pair)
+        if df.empty or len(df) < 2:
             continue
         latest = df.iloc[-1]
         prev = df.iloc[-2]
-        avg_vol = df["5. volume"].tail(20).mean()
-        rel_vol = latest["5. volume"] / avg_vol if avg_vol > 0 else 0
         change_pct = ((latest["4. close"] - prev["4. close"]) / prev["4. close"]) * 100
         movers.append({
-            "ticker": symbol,
-            "price": round(latest["4. close"], 2),
-            "change_percent": round(change_pct, 2),
-            "volume": int(latest["5. volume"]),
-            "relative_volume": round(rel_vol, 2)
+            "pair": pair,
+            "price": round(latest["4. close"], 5),
+            "change_percent": round(change_pct, 3)
         })
         progress.progress((i+1)/len(universe))
     movers_df = pd.DataFrame(movers)
     if not movers_df.empty:
-        gainers = movers_df.sort_values("change_percent", ascending=False).head(10)
-        losers = movers_df.sort_values("change_percent", ascending=True).head(10)
-        actives = movers_df.sort_values("volume", ascending=False).head(10)
+        gainers = movers_df.sort_values("change_percent", ascending=False).head(5)
+        losers = movers_df.sort_values("change_percent", ascending=True).head(5)
+        actives = movers_df.sort_values("price", ascending=False).head(5)  # proxy: highest price pairs
         return gainers, losers, actives, movers_df
     return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
@@ -100,22 +101,25 @@ def fetch_polygon_news():
 
 # -------------------- STREAMLIT UI --------------------
 def main():
-    st.set_page_config(page_title="S&P 500 Dashboard", layout="wide")
-    st.title("📊 S&P 500 Demand/Supply Dashboard")
+    st.set_page_config(page_title="Forex Dashboard", layout="wide")
+    st.title("💱 Forex Demand/Supply Dashboard")
 
     last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.caption(f"Last Updated: {last_updated}")
 
     # Universe
-    universe = load_sp500_universe()
-    gainers, losers, actives, movers_df = compute_daily_movers(universe)
+    universe = load_forex_universe()
+    gainers, losers, actives, movers_df = compute_fx_movers(universe)
 
-    # Quick Metrics
+    # Quick Metrics (blips at the top)
     if not movers_df.empty:
         col1, col2, col3 = st.columns(3)
-        col1.metric("Top Gainer", gainers.iloc[0]["ticker"], f"{gainers.iloc[0]['change_percent']}%")
-        col2.metric("Top Loser", losers.iloc[0]["ticker"], f"{losers.iloc[0]['change_percent']}%")
-        col3.metric("Most Active", actives.iloc[0]["ticker"], f"{actives.iloc[0]['volume']:,}")
+        if not gainers.empty:
+            col1.metric("Top Gainer", gainers.iloc[0]["pair"], f"{gainers.iloc[0]['change_percent']}%")
+        if not losers.empty:
+            col2.metric("Top Loser", losers.iloc[0]["pair"], f"{losers.iloc[0]['change_percent']}%")
+        if not actives.empty:
+            col3.metric("Highest Price", actives.iloc[0]["pair"], f"{actives.iloc[0]['price']}")
 
     # Tabs
     tab_movers, tab_charts, tab_news = st.tabs(["📈 Movers", "📉 Charts", "📰 News"])
@@ -132,23 +136,23 @@ def main():
             st.dataframe(losers.style.background_gradient(subset=["change_percent"], cmap="Reds"))
         else:
             st.info("No losers available.")
-        st.subheader("🔥 Most Active")
-        if not actives.empty and "volume" in actives.columns:
-            st.dataframe(actives.style.background_gradient(subset=["volume"], cmap="Blues"))
+        st.subheader("💲 Highest Price Pairs")
+        if not actives.empty and "price" in actives.columns:
+            st.dataframe(actives.style.background_gradient(subset=["price"], cmap="Blues"))
         else:
-            st.info("No active stocks available.")
+            st.info("No active pairs available.")
 
     # Charts Tab
     with tab_charts:
         st.subheader("Hourly Bar Chart")
-        symbol = st.text_input("Enter a ticker:", "AAPL")
-        df = fetch_alpha_intraday(symbol)
+        pair = st.text_input("Enter a forex pair (e.g., EURUSD):", "EURUSD")
+        df = fetch_fx_intraday(pair)
         if not df.empty:
             yesterday = df.index[-1].date()
             df_yday = df[df.index.date == yesterday]
             st.bar_chart(df_yday["4. close"])
         else:
-            st.info(f"No intraday data for {symbol}.")
+            st.info(f"No intraday data for {pair}.")
 
     # News Tab
     with tab_news:
