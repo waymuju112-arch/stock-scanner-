@@ -14,7 +14,9 @@ NEWS_API_KEY = 'YOUR_NEWSAPI_KEY'   # get one free at https://newsapi.org
 EMAIL_ADDRESS = 'your_email@gmail.com'
 EMAIL_PASSWORD = 'YOUR_APP_PASSWORD'
 RECIPIENT_EMAIL = 'recipient_email@gmail.com'
-TICKERS = ['WKEY', 'IPHA', 'LQDP', 'CGTL', 'ONDS', 'VMAR', 'CKPT', 'UBXG', 'DRUG']
+
+# ✅ Reduced ticker list to avoid rate limits
+TICKERS = ['AAPL', 'MSFT', 'TSLA', 'NVDA', 'AMD']
 
 # -------------------- SAFE HISTORY WRAPPER --------------------
 def safe_history(symbol, period="7d", retries=3, delay=5):
@@ -41,8 +43,12 @@ def scan_stocks(tickers):
         price_change = ((today['Close'] - yesterday['Close']) / yesterday['Close']) * 100
         volume_ratio = today['Volume'] / hist['Volume'].mean()
         price = today['Close']
-        info = yf.Ticker(symbol).info
-        float_shares = info.get('floatShares', 0) / 1e6
+
+        ticker_obj = yf.Ticker(symbol)
+        try:
+            float_shares = ticker_obj.fast_info.get('sharesOutstanding', 0) / 1e6
+        except Exception:
+            float_shares = 0
 
         results.append({
             'Symbol': symbol,
