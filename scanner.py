@@ -42,8 +42,8 @@ def fetch_top_losers(limit=100):
     return pd.DataFrame()
 
 # -------------------- SCORING ENGINE --------------------
-def score_stocks(df, positive=True):
-    """Apply grading mechanism to gainers/losers"""
+def score_stocks(df):
+    """Apply grading mechanism to movers"""
     scored = []
     for _, row in df.iterrows():
         symbol = row["Symbol"]
@@ -65,23 +65,9 @@ def score_stocks(df, positive=True):
             "Volume": volume,
             "Match %": match_score
         })
-
-    # Sort gainers descending, losers ascending
-    if positive:
-        return sorted(scored, key=lambda x: x["Match %"], reverse=True)
-    else:
-        return sorted(scored, key=lambda x: x["Match %"], reverse=True)
+    return scored
 
 # -------------------- STREAMLIT UI --------------------
-def plot_trend(symbol):
-    """Simple placeholder trend chart"""
-    plt.figure(figsize=(6, 3))
-    plt.plot([1, 2, 3, 4, 5], [10, 12, 15, 14, 18], marker="o", color="blue")
-    plt.title(f"{symbol} Trend Projection")
-    plt.xlabel("Days")
-    plt.ylabel("Price")
-    st.pyplot(plt)
-
 def main():
     st.set_page_config(page_title="Tadi's Market Scanner", layout="wide")
     st_autorefresh(interval=60000, limit=None, key="refresh")
@@ -89,43 +75,37 @@ def main():
     st.title("📈 Tadi's Market Scanner")
     st.caption("Powered by Yahoo Finance (gainers & losers) + Polygon.io (news)")
 
-    tab_gainers, tab_losers, tab_analytics, tab_news = st.tabs(["🚀 Gainers", "📉 Losers", "📊 Analytics", "📰 News"])
+    tab_movers, tab_news = st.tabs(["📊 Market Movers", "📰 News"])
 
     # Fetch data
     gainers = fetch_top_gainers(limit=100)
     losers = fetch_top_losers(limit=100)
 
-    scored_gainers = score_stocks(gainers, positive=True) if not gainers.empty else []
-    scored_losers = score_stocks(losers, positive=False) if not losers.empty else []
+    scored_gainers = score_stocks(gainers) if not gainers.empty else []
+    scored_losers = score_stocks(losers) if not losers.empty else []
 
-    # Gainers Tab
-    with tab_gainers:
-        st.header("Top 100 Gainers")
-        if scored_gainers:
-            df_gainers = pd.DataFrame(scored_gainers)
-            st.dataframe(df_gainers, use_container_width=True)
-            st.bar_chart(df_gainers.set_index("Symbol")["Match %"].head(10))
-        else:
-            st.info("No gainers data available right now.")
+    # Market Movers Tab
+    with tab_movers:
+        st.header("Top Market Movers")
+        col1, col2 = st.columns(2)
 
-    # Losers Tab
-    with tab_losers:
-        st.header("Top 100 Losers")
-        if scored_losers:
-            df_losers = pd.DataFrame(scored_losers)
-            st.dataframe(df_losers, use_container_width=True)
-            st.bar_chart(df_losers.set_index("Symbol")["Match %"].head(10))
-        else:
-            st.info("No losers data available right now.")
+        with col1:
+            st.subheader("🚀 Top 100 Gainers")
+            if scored_gainers:
+                df_gainers = pd.DataFrame(scored_gainers)
+                st.dataframe(df_gainers, use_container_width=True)
+                st.bar_chart(df_gainers.set_index("Symbol")["Match %"].head(10))
+            else:
+                st.info("No gainers data available right now.")
 
-    # Analytics Tab
-    with tab_analytics:
-        st.header("Combined Analytics")
-        if scored_gainers or scored_losers:
-            combined = pd.DataFrame(scored_gainers + scored_losers)
-            st.dataframe(combined, use_container_width=True)
-        else:
-            st.info("No analytics available right now.")
+        with col2:
+            st.subheader("📉 Top 100 Losers")
+            if scored_losers:
+                df_losers = pd.DataFrame(scored_losers)
+                st.dataframe(df_losers, use_container_width=True)
+                st.bar_chart(df_losers.set_index("Symbol")["Match %"].head(10))
+            else:
+                st.info("No losers data available right now.")
 
     # News Tab
     with tab_news:
@@ -147,7 +127,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
 
 
