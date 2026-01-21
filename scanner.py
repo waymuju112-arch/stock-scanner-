@@ -75,7 +75,7 @@ def main():
     st.title("📈 Tadi's Market Scanner")
     st.caption("Powered by Yahoo Finance (gainers & losers) + Polygon.io (news)")
 
-    tab_movers, tab_news = st.tabs(["📊 Market Movers", "📰 News"])
+    tab_movers, tab_charts, tab_news = st.tabs(["📊 Market Movers", "📈 Charts", "📰 News"])
 
     # Fetch data
     gainers = fetch_top_gainers(limit=100)
@@ -106,6 +106,37 @@ def main():
                 st.bar_chart(df_losers.set_index("Symbol")["Match %"].head(10))
             else:
                 st.info("No losers data available right now.")
+
+    # Charts Tab
+    with tab_charts:
+        st.header("Visual Analytics: Growth vs Decline")
+
+        if scored_gainers or scored_losers:
+            # Pie chart: proportion of gainers vs losers
+            labels = ["Gainers", "Losers"]
+            sizes = [len(scored_gainers), len(scored_losers)]
+            colors = ["green", "red"]
+
+            fig1, ax1 = plt.subplots()
+            ax1.pie(sizes, labels=labels, colors=colors, autopct="%1.1f%%", startangle=90)
+            ax1.axis("equal")
+            st.pyplot(fig1)
+
+            # Line chart: average % change trend
+            gainers_df = pd.DataFrame(scored_gainers)
+            losers_df = pd.DataFrame(scored_losers)
+
+            if not gainers_df.empty and not losers_df.empty:
+                avg_gain = gainers_df["Change (%)"].mean()
+                avg_loss = losers_df["Change (%)"].mean()
+
+                fig2, ax2 = plt.subplots()
+                ax2.plot(["Gainers", "Losers"], [avg_gain, avg_loss], marker="o", color="blue")
+                ax2.set_title("Average % Change Comparison")
+                ax2.set_ylabel("% Change")
+                st.pyplot(fig2)
+        else:
+            st.info("No chart data available right now.")
 
     # News Tab
     with tab_news:
