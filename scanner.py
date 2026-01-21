@@ -1,4 +1,4 @@
-# scanner_watchlist.py
+# scanner_polygon_finnhub.py
 
 import requests
 import streamlit as st
@@ -6,118 +6,123 @@ import matplotlib.pyplot as plt
 from streamlit_autorefresh import st_autorefresh
 
 # -------------------- CONFIG --------------------
-BENZINGA_API_KEY = "bz.WTQQ73ASIU4DILGULR76RAWSOFSRU2XU"
-NEWS_API_KEY = "pub_08ee44a47dff4904afbb1f82899a98d7"  # optional fallback
-WATCHLIST = ["AAPL", "TSLA", "NVDA", "MSFT", "AMZN"]  # customize your tickers
+POLYGON_API_KEY = "aZTfdpYgZ0kIAVwdILxPygSHdZ0CrDBu"
+FINNHUB_API_KEY = "d5o3171r01qma2b78u4gd5o3171r01qma2b78u50"
 
-# -------------------- BENZINGA QUOTES --------------------
-def fetch_quotes(tickers):
-    url = f"https://api.benzinga.com/api/v2.1/quotes?token={BENZINGA_API_KEY}&tickers={','.join(tickers)}"
+# -------------------- POLYGON MOVERS --------------------
+def fetch_polygon_movers():
+    """Fetch top gainers/losers from Polygon.io"""
+    url = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/gainers?apiKey={POLYGON_API_KEY}"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
-            return response.json().get("quotes", [])
+            return response.json().get("tickers", [])
         else:
-            print("Quotes raw response:", response.text[:200])
+            print("Polygon movers raw response:", response.text[:200])
     except Exception as e:
-        print("Error fetching quotes:", e)
+        print("Error fetching Polygon movers:", e)
     return []
 
-# -------------------- BENZINGA NEWS --------------------
-def fetch_benzinga_news():
-    url = f"https://api.benzinga.com/api/v2/news?token={BENZINGA_API_KEY}&limit=10"
+# -------------------- FINNHUB NEWS --------------------
+def fetch_finnhub_news():
+    """Fetch latest market news from Finnhub.io"""
+    url = f"https://finnhub.io/api/v1/news?category=general&token={FINNHUB_API_KEY}"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
             return response.json()
         else:
-            print("Benzinga news raw response:", response.text[:200])
+            print("Finnhub news raw response:", response.text[:200])
     except Exception as e:
-        print("Error fetching Benzinga news:", e)
-    return []
-
-def fetch_news_fallback():
-    url = f"https://newsapi.org/v2/everything?q=stock%20market&apiKey={NEWS_API_KEY}&pageSize=10"
-    try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
-            return response.json().get("articles", [])
-        else:
-            print("NewsAPI raw response:", response.text[:200])
-    except Exception as e:
-        print("Error fetching NewsAPI:", e)
+        print("Error fetching Finnhub news:", e)
     return []
 
 # -------------------- FILTER ENGINE --------------------
-def filter_quotes(quotes, change_thresh, price_min, price_max):
+def filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max):
+    """Apply Warrior Trading-style filters to Polygon movers."""
     filtered = []
-    for q in quotes:
-        symbol = q.get("symbol")
-        price = float(q.get("ask_price", 0))
-        change_pct = float(q.get("percent_change", 0))
-        volume = q.get("volume", 0)
+    for stock in movers:
+        symbol = stock.get("ticker")
+        price = float(stock.get("lastTrade", {}).get("p", 0))
+        change_pct = float(stock.get("todaysChangePerc", 0))
+        volume = float(stock.get("day", {}).get("v", 0))
+        prev_volume = float(stock.get("prevDay", {}).get("v", 1))
 
-        if (change_pct >= change_thresh and
+        volume_ratio = volume / prev_volume if prev_volume > 0 else 0
+
+        if (volume_ratio >= vol_ratio_thresh and
+            change_pct >= change_thresh and
             price_min <= price <= price_max):
             filtered.append({
                 "Symbol": symbol,
                 "Price": price,
-                "Change (%)": change_pct,
+                "Change (%)": round(change_pct, 2),
+                "Volume Ratio": round(volume_ratio, 2),
                 "Volume": volume
             })
     return filtered
 
 # -------------------- STREAMLIT UI --------------------
 def plot_trend(symbol):
+    """Placeholder trend chart."""
     plt.figure(figsize=(6, 3))
-    plt.plot([1, 2, 3, 4, 5], [10, 12, 15, 14, 18], marker="o", color="blue")
+    plt.plot([1, 2, 3, 4, 5], [10, 12, 15, 14, 18], marker="o", color="green")
     plt.title(f"{symbol} Trend Projection")
     plt.xlabel("Days")
     plt.ylabel("Price")
     st.pyplot(plt)
 
+def show_criteria():
+    st.markdown("### 📋 Scanner Criteria")
+    st.markdown("""
+    **Indicators of High Demand and Low Supply**
+    - Relative Volume threshold (adjustable)  
+    - % Change threshold (adjustable)  
+    - Price range (adjustable)  
+    """)
+
 def main():
-    st.set_page_config(page_title="Tadi's Watchlist Scanner", layout="wide")
+    st.set_page_config(page_title="Tadi's Polygon/Finnhub Scanner", layout="wide")
 
     # Auto-refresh every 60 seconds
     st_autorefresh(interval=60000, limit=None, key="refresh")
 
-    st.title("📈 Tadi's Watchlist Scanner")
-    st.subheader("Real-time Benzinga quotes + news")
+    st.title("📈 Tadi's Scanner — Polygon Movers + Finnhub News")
+    st.subheader("Real-time market data with adjustable filters")
 
     col1, col2, col3 = st.columns([1, 2, 1])
 
     # Left: Filters
     with col1:
+        show_criteria()
         st.markdown("### 🔧 Adjust Filters")
-        change_thresh = st.slider("Daily % Change", 0, 100, 5)
-        price_min, price_max = st.slider("Price Range ($)", 1, 500, (1, 200))
+        vol_ratio_thresh = st.slider("Relative Volume (x)", 1, 10, 3)
+        change_thresh = st.slider("Daily % Change", 0, 100, 10)
+        price_min, price_max = st.slider("Price Range ($)", 1, 500, (1, 50))
 
-    # Middle: Filtered Watchlist
+    # Middle: Filtered Stocks
     with col2:
-        st.markdown("### 🚀 Watchlist Movers")
-        quotes = fetch_quotes(WATCHLIST)
-        filtered = filter_quotes(quotes, change_thresh, price_min, price_max)
+        st.markdown("### 🚀 Stocks Meeting Criteria")
+        movers = fetch_polygon_movers()
+        filtered = filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max)
 
         if filtered:
             for stock in filtered:
                 st.markdown(f"#### {stock['Symbol']} — ${stock['Price']} ({stock['Change (%)']}%)")
-                st.write(f"📊 Volume: {stock['Volume']}")
+                st.write(f"📊 Volume Ratio: {stock['Volume Ratio']} | Volume: {stock['Volume']:,}")
                 plot_trend(stock['Symbol'])
                 st.markdown("---")
         else:
-            st.warning("No watchlist stocks currently meet criteria.")
+            st.warning("No stocks currently meet all criteria.")
 
     # Right: Market News
     with col3:
         st.markdown("### 📰 Latest Market News")
-        news = fetch_benzinga_news()
-        if not news:
-            news = fetch_news_fallback()
+        news = fetch_finnhub_news()
 
         if news:
-            for article in news:
-                title = article.get("title") or article.get("headline")
+            for article in news[:10]:
+                title = article.get("headline") or article.get("summary")
                 url = article.get("url")
                 st.write(f"**{title}**")
                 if url:
