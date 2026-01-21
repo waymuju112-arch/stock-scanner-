@@ -1,4 +1,4 @@
-# scanner_polygon_finnhub.py
+# scanner_polygon_finnhub_float.py
 
 import requests
 import streamlit as st
@@ -38,7 +38,7 @@ def fetch_finnhub_news():
     return []
 
 # -------------------- FILTER ENGINE --------------------
-def filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max):
+def filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max, float_max):
     """Apply Warrior Trading-style filters to Polygon movers."""
     filtered = []
     for stock in movers:
@@ -47,18 +47,21 @@ def filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max)
         change_pct = float(stock.get("todaysChangePerc", 0))
         volume = float(stock.get("day", {}).get("v", 0))
         prev_volume = float(stock.get("prevDay", {}).get("v", 1))
+        float_shares = float(stock.get("sharesOutstanding", 0))  # supply/float
 
         volume_ratio = volume / prev_volume if prev_volume > 0 else 0
 
         if (volume_ratio >= vol_ratio_thresh and
             change_pct >= change_thresh and
-            price_min <= price <= price_max):
+            price_min <= price <= price_max and
+            float_shares <= float_max):
             filtered.append({
                 "Symbol": symbol,
                 "Price": price,
                 "Change (%)": round(change_pct, 2),
                 "Volume Ratio": round(volume_ratio, 2),
-                "Volume": volume
+                "Volume": volume,
+                "Float": int(float_shares)
             })
     return filtered
 
@@ -79,6 +82,7 @@ def show_criteria():
     - Relative Volume threshold (adjustable)  
     - % Change threshold (adjustable)  
     - Price range (adjustable)  
+    - Supply: Float max (adjustable, capped at 5M)  
     """)
 
 def main():
@@ -99,17 +103,18 @@ def main():
         vol_ratio_thresh = st.slider("Relative Volume (x)", 1, 10, 3)
         change_thresh = st.slider("Daily % Change", 0, 100, 10)
         price_min, price_max = st.slider("Price Range ($)", 1, 500, (1, 50))
+        float_max = st.slider("Max Float (shares)", 0, 5_000_000, 5_000_000, step=100_000)
 
     # Middle: Filtered Stocks
     with col2:
         st.markdown("### 🚀 Stocks Meeting Criteria")
         movers = fetch_polygon_movers()
-        filtered = filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max)
+        filtered = filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max, float_max)
 
         if filtered:
             for stock in filtered:
                 st.markdown(f"#### {stock['Symbol']} — ${stock['Price']} ({stock['Change (%)']}%)")
-                st.write(f"📊 Volume Ratio: {stock['Volume Ratio']} | Volume: {stock['Volume']:,}")
+                st.write(f"📊 Volume Ratio: {stock['Volume Ratio']} | Volume: {stock['Volume']:,} | Float: {stock['Float']:,}")
                 plot_trend(stock['Symbol'])
                 st.markdown("---")
         else:
@@ -132,6 +137,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
