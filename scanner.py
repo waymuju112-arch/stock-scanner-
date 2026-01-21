@@ -1,4 +1,4 @@
-# scanner_secure_fmp_intraday_debug.py
+# scanner_secure_fmp_intraday_news_debug.py
 
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -52,21 +52,37 @@ def fetch_alpha_intraday(symbol):
         st.warning(f"Alpha Vantage intraday fetch failed for {symbol}.")
     return pd.DataFrame()
 
+# -------------------- Polygon News --------------------
+@st.cache_data(ttl=900)
+def fetch_polygon_news():
+    url = f"https://api.polygon.io/v2/reference/news?apiKey={POLYGON_API_KEY}"
+    try:
+        r = requests.get(url, timeout=10)
+        if DEBUG_MODE:
+            st.write("DEBUG Polygon News:", r.status_code, r.text[:500])
+        if r.status_code == 200 and "application/json" in r.headers.get("Content-Type", ""):
+            return r.json().get("results", [])
+    except Exception as e:
+        if DEBUG_MODE:
+            st.write("DEBUG ERROR Polygon News:", e)
+        st.warning("Polygon news fetch failed.")
+    return []
+
 # -------------------- STREAMLIT UI --------------------
 def main():
-    st.set_page_config(page_title="Tadi's Market Scanner (FMP)", layout="wide")
+    st.set_page_config(page_title="Tadi's Market Scanner (FMP + News)", layout="wide")
     st_autorefresh(interval=60000, limit=100, key="refresh")
 
-    st.title("📈 Tadi's Market Scanner (FMP)")
-    st.caption("Now powered by Financial Modeling Prep for movers data")
+    st.title("📈 Tadi's Market Scanner")
+    st.caption("Powered by FMP movers, Alpha Vantage intraday, and Polygon news")
 
     # Add timestamp
     last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.markdown(f"**Last Updated:** {last_updated}")
 
-    tab_movers, tab_charts = st.tabs(["📊 Market Movers", "📈 Charts"])
+    tab_movers, tab_charts, tab_news = st.tabs(["📊 Market Movers", "📈 Charts", "📰 News"])
 
-    # Fetch data from FMP
+    # Fetch data
     gainers = fetch_fmp_movers("gainers")
     losers = fetch_fmp_movers("losers")
     actives = fetch_fmp_movers("actives")
@@ -111,6 +127,23 @@ def main():
                 st.info(f"No intraday data available for {top_symbol}.")
         else:
             st.info("No chart data available right now.")
+
+    # News Tab
+    with tab_news:
+        st.header("Latest Market News")
+        news = fetch_polygon_news()
+        if news:
+            for article in news[:10]:
+                with st.expander(article.get("title", "News Item")):
+                    image_url = article.get("image_url")
+                    if image_url:
+                        st.image(image_url, width=200)
+                    st.write(article.get("description", ""))
+                    url = article.get("article_url")
+                    if url:
+                        st.markdown(f"[Read more]({url})")
+        else:
+            st.info("No news available right now.")
 
 if __name__ == "__main__":
     main()
