@@ -1,4 +1,4 @@
-# scanner_snapshot_trend_news_predict.py
+# scanner_daily_movers_news_predict.py
 
 import streamlit as st
 import pandas as pd
@@ -10,24 +10,8 @@ ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]
 POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
 DEBUG_MODE = st.secrets.get("ADMIN_DEBUG", False)
 
-# -------------------- Snapshot Movers (Massive API or fallback) --------------------
-@st.cache_data(ttl=900)
-def fetch_snapshot_movers(direction="gainers"):
-    url = f"https://api.marketdataapi.com/v2/snapshot/locale/us/markets/stocks/{direction}?apikey={POLYGON_API_KEY}"
-    try:
-        r = requests.get(url, timeout=10)
-        if DEBUG_MODE:
-            st.write(f"DEBUG Snapshot {direction}:", r.status_code)
-            st.json(r.json())
-        if r.status_code == 200:
-            return pd.DataFrame(r.json().get("tickers", []))
-    except Exception as e:
-        if DEBUG_MODE:
-            st.write(f"DEBUG ERROR Snapshot {direction}:", e)
-    return pd.DataFrame()
-
 # -------------------- Alpha Vantage Daily OHLC --------------------
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=1800)  # cache for 30 minutes
 def fetch_alpha_daily(symbol):
     url = (
         f"https://www.alphavantage.co/query?"
@@ -48,6 +32,32 @@ def fetch_alpha_daily(symbol):
             st.write(f"DEBUG ERROR Alpha Daily {symbol}:", e)
     return pd.DataFrame()
 
+# -------------------- Compute Movers --------------------
+def compute_daily_movers(watchlist):
+    movers = []
+    for symbol in watchlist:
+        df = fetch_alpha_daily(symbol)
+        if not df.empty and len(df) > 1:
+            latest = df.iloc[-1]["4. close"]
+            prev = df.iloc[-2]["4. close"]
+            change_pct = ((latest - prev) / prev) * 100
+            volume = df.iloc[-1]["5. volume"]
+            movers.append({
+                "ticker": symbol,
+                "price": round(latest, 2),
+                "change_percent": round(change_pct, 2),
+                "volume": int(volume)
+            })
+            if DEBUG_MODE:
+                st.write(f"DEBUG {symbol}: price={latest:.2f}, change={change_pct:.2f}%, volume={volume}")
+    movers_df = pd.DataFrame(movers)
+    if not movers_df.empty:
+        gainers = movers_df.sort_values("change_percent", ascending=False).head(5)
+        losers = movers_df.sort_values("change_percent", ascending=True).head(5)
+        actives = movers_df.sort_values("volume", ascending=False).head(5)
+        return gainers, losers, actives
+    return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
 # -------------------- Polygon News --------------------
 @st.cache_data(ttl=900)
 def fetch_polygon_news():
@@ -64,42 +74,42 @@ def fetch_polygon_news():
     return []
 
 # -------------------- Prediction Engine --------------------
-def score_stock(row):
+def score_stock(row, news_keywords):
     score = 0
-    if row.get("price", 0) >= 3 and row.get("price", 0) <= 20:
+    if 3 <= row["price"] <= 20:
         score += 1
-    if row.get("change_percent", 0) >= 30:
+    if row["change_percent"] >= 30:
         score += 2
-    if row.get("volume", 0) > row.get("avg_volume", 0) * 5:
+    if row["volume"] > 5_000_000:  # proxy for relative volume
         score += 2
-    if row.get("news_catalyst", False):
+    if any(row["ticker"] in kw for kw in news_keywords):
         score += 2
     return score
 
 def generate_predictions(movers_df, news_keywords):
-    movers_df["news_catalyst"] = movers_df["ticker"].apply(
-        lambda x: any(x in kw for kw in news_keywords)
-    )
-    movers_df["score"] = movers_df.apply(score_stock, axis=1)
+    if movers_df.empty:
+        return pd.DataFrame()
+    movers_df["score"] = movers_df.apply(lambda r: score_stock(r, news_keywords), axis=1)
     return movers_df.sort_values("score", ascending=False).head(5)
 
 # -------------------- STREAMLIT UI --------------------
 def main():
-    st.set_page_config(page_title="Snapshot Scanner", layout="wide")
-    st.title("📊 Snapshot Market Scanner")
-    st.caption("Previous day movers + trend charts + news catalysts + prediction engine")
+    st.set_page_config(page_title="Daily Movers Scanner", layout="wide")
+    st.title("📊 Daily Movers Scanner")
+    st.caption("Alpha Vantage daily movers + Polygon news + prediction engine")
 
     last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.markdown(f"**Last Updated:** {last_updated}")
 
     tab_movers, tab_charts, tab_news, tab_predict = st.tabs(
-        ["📈 Snapshot Movers", "📉 Trend Charts", "📰 News", "🔮 Predictions"]
+        ["📈 Movers", "📉 Trend Charts", "📰 News", "🔮 Predictions"]
     )
 
-    # Fetch snapshot movers
-    gainers = fetch_snapshot_movers("gainers")
-    losers = fetch_snapshot_movers("losers")
-    actives = fetch_snapshot_movers("actives")
+    # Curated universe (expandable)
+    watchlist = ["AAPL", "MSFT", "TSLA", "AMZN", "NVDA", "META", "GOOG", "AMD", "NFLX", "INTC"]
+
+    # Compute movers
+    gainers, losers, actives = compute_daily_movers(watchlist)
 
     # Movers Tab
     with tab_movers:
@@ -107,12 +117,21 @@ def main():
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("🚀 Gainers")
-            st.dataframe(gainers[["ticker", "price", "change_percent", "volume"]], use_container_width=True)
+            if not gainers.empty:
+                st.dataframe(gainers, use_container_width=True)
+            else:
+                st.info("No gainers data available.")
         with col2:
             st.subheader("📉 Losers")
-            st.dataframe(losers[["ticker", "price", "change_percent", "volume"]], use_container_width=True)
+            if not losers.empty:
+                st.dataframe(losers, use_container_width=True)
+            else:
+                st.info("No losers data available.")
         st.subheader("🔥 Most Active")
-        st.dataframe(actives[["ticker", "price", "volume"]], use_container_width=True)
+        if not actives.empty:
+            st.dataframe(actives, use_container_width=True)
+        else:
+            st.info("No active stocks data available.")
 
     # Charts Tab
     with tab_charts:
@@ -143,11 +162,13 @@ def main():
         st.header("Prediction Engine")
         news_keywords = [article.get("title", "") for article in fetch_polygon_news()]
         scored = generate_predictions(gainers, news_keywords)
-        st.dataframe(scored[["ticker", "price", "change_percent", "volume", "score"]], use_container_width=True)
+        if not scored.empty:
+            st.dataframe(scored[["ticker", "price", "change_percent", "volume", "score"]], use_container_width=True)
+        else:
+            st.info("No predictions available.")
 
 if __name__ == "__main__":
     main()
-
 
 
 
