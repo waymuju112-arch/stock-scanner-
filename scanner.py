@@ -168,17 +168,26 @@ def main():
             st.info(f"No intraday data for {pair}.")
 
     # News Tab
-    with tab_news:
-        st.subheader("Latest Forex News")
-        news = fetch_forex_news()
-        if news:
-            for article in news[:8]:
-                st.markdown("---")
-                st.markdown(f"### {article['title']}")
+   # News Tab
+with tab_news:
+    st.subheader("Latest Forex News")
+    news = fetch_forex_news()
+    if news:
+        for article in news[:8]:
+            st.markdown("---")
+            col1, col2 = st.columns([1,3])
+            with col1:
+                # Thumbnail on the left
+                if "image" in article and article["image"]:
+                    st.image(article["image"], use_container_width=True)
+            with col2:
+                # Bold header above preview
+                st.markdown(f"**{article['title']}**")
                 st.write(article['summary'])
                 st.markdown(f"[🔗 Read more]({article['link']})")
-        else:
-            st.info("No forex news available.")
+    else:
+        st.info("No forex news available.")
+
 
 if __name__ == "__main__":
     main()
