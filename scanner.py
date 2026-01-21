@@ -1,4 +1,4 @@
-# scanner_forex_final.py
+# scanner_forex_snapshot.py
 
 import streamlit as st
 import pandas as pd
@@ -44,45 +44,21 @@ def fetch_fx_daily(pair):
             st.write(f"DEBUG ERROR FX Daily {pair}:", e)
     return pd.DataFrame()
 
-# -------------------- Alpha Vantage FX Intraday --------------------
-@st.cache_data(ttl=600)
-def fetch_fx_intraday(pair):
-    from_symbol = pair[:3]
-    to_symbol = pair[3:]
-    url = (
-        f"https://www.alphavantage.co/query?"
-        f"function=FX_INTRADAY&from_symbol={from_symbol}&to_symbol={to_symbol}&interval=60min&apikey={ALPHA_API_KEY}&outputsize=full"
-    )
-    try:
-        r = requests.get(url, timeout=10)
-        if r.status_code == 200:
-            data = r.json().get("Time Series FX (60min)", {})
-            if data:
-                df = pd.DataFrame.from_dict(data, orient="index").astype(float)
-                df.index = pd.to_datetime(df.index)
-                return df.sort_index()
-    except Exception as e:
-        if DEBUG_MODE:
-            st.write(f"DEBUG ERROR FX Intraday {pair}:", e)
-    return pd.DataFrame()
-
-# -------------------- Compute Movers --------------------
+# -------------------- Compute Movers Snapshot --------------------
 def compute_fx_movers(universe):
     movers = []
-    progress = st.progress(0)
-    for i, pair in enumerate(universe):
+    for pair in universe:
         df = fetch_fx_daily(pair)
         if df.empty or len(df) < 2:
             continue
-        latest = df.iloc[-1]
-        prev = df.iloc[-2]
+        latest = df.iloc[-1]   # yesterday
+        prev = df.iloc[-2]     # day before yesterday
         change_pct = ((latest["4. close"] - prev["4. close"]) / prev["4. close"]) * 100
         movers.append({
             "pair": pair,
             "price": round(latest["4. close"], 5),
             "change_percent": round(change_pct, 3)
         })
-        progress.progress((i+1)/len(universe))
     movers_df = pd.DataFrame(movers)
     if not movers_df.empty:
         movers_df["abs_change"] = movers_df["change_percent"].abs()
@@ -104,7 +80,7 @@ def fetch_forex_news():
                 "title": entry.title,
                 "summary": entry.summary,
                 "link": entry.link,
-                "image": entry.get("media_content", [{}])[0].get("url", None)  # thumbnail if available
+                "image": entry.get("media_content", [{}])[0].get("url", None)
             })
         return articles
     except Exception as e:
@@ -140,32 +116,35 @@ def main():
     # Movers Tab
     with tab_movers:
         st.subheader("🚀 Gainers")
-        if not gainers.empty and "change_percent" in gainers.columns:
+        if not gainers.empty:
             st.dataframe(gainers.style.background_gradient(subset=["change_percent"], cmap="Greens"))
         else:
             st.info("No gainers available.")
         st.subheader("📉 Losers")
-        if not losers.empty and "change_percent" in losers.columns:
+        if not losers.empty:
             st.dataframe(losers.style.background_gradient(subset=["change_percent"], cmap="Reds"))
         else:
             st.info("No losers available.")
         st.subheader("🔥 Most Active (Highest Volatility)")
-        if not actives.empty and "change_percent" in actives.columns:
+        if not actives.empty:
             st.dataframe(actives.style.background_gradient(subset=["change_percent"], cmap="Blues"))
         else:
             st.info("No active pairs available.")
 
-    # Charts Tab
+    # Charts Tab (Snapshot Mode)
     with tab_charts:
-        st.subheader("Hourly Bar Chart")
-        pair = st.text_input("Enter a forex pair (e.g., EURUSD):", "EURUSD")
-        df = fetch_fx_intraday(pair)
-        if not df.empty:
-            yesterday = df.index[-1].date()
-            df_yday = df[df.index.date == yesterday]
-            st.bar_chart(df_yday["4. close"])
+        st.subheader("Yesterday's Movers Snapshot")
+        if not movers_df.empty:
+            st.write("Top 5 Gainers")
+            st.bar_chart(gainers.set_index("pair")["change_percent"])
+
+            st.write("Top 5 Losers")
+            st.bar_chart(losers.set_index("pair")["change_percent"])
+
+            st.write("Top 5 Most Active (Highest Volatility)")
+            st.bar_chart(actives.set_index("pair")["abs_change"])
         else:
-            st.info(f"No intraday data for {pair}.")
+            st.info("No data available for yesterday's snapshot.")
 
     # News Tab
     with tab_news:
@@ -187,9 +166,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
 
 
 
