@@ -4,7 +4,6 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
-from streamlit_autorefresh import st_autorefresh
 
 # --- LOAD ENV OR SECRETS ---
 if st.secrets:  # running on Streamlit Cloud
@@ -44,8 +43,9 @@ def get_forex_data(from_symbol, to_symbol):
 # --- STREAMLIT UI ---
 st.title("💱 Multi-Pair Forex Scanner with Alerts")
 
-# Auto-refresh every 5 minutes
-st_autorefresh(interval=300000, limit=None, key="refresh")
+# Add a manual refresh button
+if st.button("🔄 Refresh now"):
+    st.experimental_rerun()
 
 pairs = ["USD/ZAR", "EUR/USD", "GBP/JPY", "USD/JPY"]  # core watchlist
 thresholds = {
@@ -78,6 +78,8 @@ for pair in pairs:
 if results:
     st.subheader("Scanner Results")
     st.dataframe(results)
+
+
 
 
 
