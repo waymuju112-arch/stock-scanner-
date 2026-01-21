@@ -12,7 +12,8 @@ FINNHUB_API_KEY = "d5o3171r01qma2b78u4gd5o3171r01qma2b78u50"
 
 # -------------------- POLYGON MOVERS --------------------
 def fetch_polygon_movers():
-    url = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/gainers?apiKey={POLYGON_API_KEY}"
+    # broader endpoint: all tickers snapshot
+    url = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers?apiKey={POLYGON_API_KEY}"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
@@ -149,8 +150,12 @@ def main():
         if news:
             for article in news[:10]:
                 with st.expander(article.get("title", "News Item")):
+                    # Thumbnail image if available
+                    image_url = article.get("image_url")
+                    if image_url:
+                        st.image(image_url, width=200)
                     st.write(article.get("description", ""))
-                    url = article.get("url")
+                    url = article.get("article_url")
                     if url:
                         st.markdown(f"[Read more]({url})")
         else:
@@ -158,6 +163,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
