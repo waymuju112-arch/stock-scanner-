@@ -1,4 +1,4 @@
-# scanner_sp500_predict.py
+# scanner_sp500_csv.py
 
 import streamlit as st
 import pandas as pd
@@ -10,14 +10,17 @@ ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]
 POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
 DEBUG_MODE = st.secrets.get("ADMIN_DEBUG", False)
 
-# -------------------- Load Universe from Wikipedia --------------------
+# -------------------- Load Universe from CSV --------------------
 @st.cache_data(ttl=86400)  # refresh daily
 def load_sp500_universe():
-    url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    tables = pd.read_html(url)
-    df = tables[0]  # first table contains tickers
-    tickers = df["Symbol"].dropna().unique().tolist()
-    return tickers
+    try:
+        df = pd.read_csv("sp500.csv")
+        return df["Symbol"].dropna().unique().tolist()
+    except Exception as e:
+        st.warning("Failed to load sp500.csv, falling back to default list.")
+        if DEBUG_MODE:
+            st.write("DEBUG CSV ERROR:", e)
+        return ["AAPL","MSFT","TSLA","AMZN","NVDA"]
 
 # -------------------- Alpha Vantage Daily OHLC --------------------
 @st.cache_data(ttl=1800)
@@ -62,7 +65,8 @@ def fetch_alpha_intraday(symbol):
 # -------------------- Compute Movers --------------------
 def compute_daily_movers(universe):
     movers = []
-    for symbol in universe:
+    progress = st.progress(0)
+    for i, symbol in enumerate(universe):
         df = fetch_alpha_daily(symbol)
         if df.empty or len(df) < 20:
             continue
@@ -78,8 +82,7 @@ def compute_daily_movers(universe):
             "volume": int(latest["5. volume"]),
             "relative_volume": round(rel_vol, 2)
         })
-        if DEBUG_MODE:
-            st.write(f"DEBUG {symbol}: price={latest['4. close']:.2f}, change={change_pct:.2f}%, rel_vol={rel_vol:.2f}")
+        progress.progress((i+1)/len(universe))
     movers_df = pd.DataFrame(movers)
     if not movers_df.empty:
         gainers = movers_df.sort_values("change_percent", ascending=False).head(10)
@@ -112,7 +115,7 @@ def score_stock(row, news_keywords):
         score += 2
     if any(row["ticker"] in kw for kw in news_keywords):
         score += 2
-    # Float < 5M requires external dataset; placeholder proxy
+    # Float < 5M requires external dataset; proxy with volume
     if row["volume"] < 5_000_000:
         score += 1
     return score
@@ -193,6 +196,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
