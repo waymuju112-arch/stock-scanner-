@@ -4,6 +4,7 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
+import time
 
 # --- LOAD ENV OR SECRETS ---
 if st.secrets:  # running on Streamlit Cloud
@@ -41,11 +42,7 @@ def get_forex_data(from_symbol, to_symbol):
     return None
 
 # --- STREAMLIT UI ---
-st.title("💱 Multi-Pair Forex Scanner with Alerts")
-
-# Add a manual refresh button
-if st.button("🔄 Refresh now"):
-    st.experimental_rerun()
+st.title("💱 Multi-Pair Forex Scanner with Auto-Refresh")
 
 pairs = ["USD/ZAR", "EUR/USD", "GBP/JPY", "USD/JPY"]  # core watchlist
 thresholds = {
@@ -55,29 +52,38 @@ thresholds = {
     "USD/JPY": 150.00
 }
 
-results = []
-for pair in pairs:
-    base, quote = pair.split("/")
-    fx_data = get_forex_data(base, quote)
-    if fx_data:
-        rate = float(fx_data.get("5. Exchange Rate", 0))
-        results.append({"Pair": pair, "Rate": rate})
+# --- AUTO-REFRESH LOOP ---
+placeholder = st.empty()
 
-        # Display metric
-        st.metric(label=f"{pair} Exchange Rate", value=rate)
+with placeholder.container():
+    results = []
+    for pair in pairs:
+        base, quote = pair.split("/")
+        fx_data = get_forex_data(base, quote)
+        if fx_data:
+            rate = float(fx_data.get("5. Exchange Rate", 0))
+            results.append({"Pair": pair, "Rate": rate})
 
-        # Alert if above threshold
-        if rate > thresholds[pair]:
-            alert_body = f"{pair} is trading at {rate}, above threshold {thresholds[pair]}"
-            send_email_alert(f"Forex Alert: {pair}", alert_body, EMAIL_TO)
-            st.success(f"📧 Email alert sent for {pair}!")
-    else:
-        st.warning(f"No data for {pair}")
+            # Display metric
+            st.metric(label=f"{pair} Exchange Rate", value=rate)
 
-# Show summary table
-if results:
-    st.subheader("Scanner Results")
-    st.dataframe(results)
+            # Alert if above threshold
+            if rate > thresholds[pair]:
+                alert_body = f"{pair} is trading at {rate}, above threshold {thresholds[pair]}"
+                send_email_alert(f"Forex Alert: {pair}", alert_body, EMAIL_TO)
+                st.success(f"📧 Email alert sent for {pair}!")
+        else:
+            st.warning(f"No data for {pair}")
+
+    # Show summary table
+    if results:
+        st.subheader("Scanner Results")
+        st.dataframe(results)
+
+# Wait 5 minutes, then rerun
+time.sleep(300)
+st.experimental_rerun()
+
 
 
 
