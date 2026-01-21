@@ -92,7 +92,7 @@ def main():
     st_autorefresh(interval=60000, limit=None, key="refresh")
 
     st.title("📈 Tadi's Scanner — Polygon Movers + Finnhub News")
-    st.subheader("Real-time market data with adjustable filters")
+    st.subheader("Real-time market data")
 
     col1, col2, col3 = st.columns([1, 2, 1])
 
