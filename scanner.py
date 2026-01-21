@@ -8,8 +8,8 @@ from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 
 # -------------------- CONFIG --------------------
-FMP_API_KEY = st.secrets["FMP_API_KEY"]
-ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]
+FMP_API_KEY = st.secrets["FMP_API_KEY"]       # your new FMP key
+ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]   # still used for intraday OHLC
 POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
 DEBUG_MODE = st.secrets.get("ADMIN_DEBUG", False)
 
@@ -114,6 +114,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
