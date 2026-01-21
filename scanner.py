@@ -1,4 +1,4 @@
-# scanner_marketwide_predict.py
+# scanner_sp500_predict.py
 
 import streamlit as st
 import pandas as pd
@@ -10,11 +10,14 @@ ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]
 POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
 DEBUG_MODE = st.secrets.get("ADMIN_DEBUG", False)
 
-# -------------------- Load Universe --------------------
-@st.cache_data(ttl=3600)
-def load_universe():
-    # For prototype: static list of major tickers (S&P 500 subset)
-    return ["AAPL","MSFT","TSLA","AMZN","NVDA","META","GOOG","AMD","NFLX","INTC","BA","DIS","PYPL","SQ","SHOP"]
+# -------------------- Load Universe from Wikipedia --------------------
+@st.cache_data(ttl=86400)  # refresh daily
+def load_sp500_universe():
+    url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    tables = pd.read_html(url)
+    df = tables[0]  # first table contains tickers
+    tickers = df["Symbol"].dropna().unique().tolist()
+    return tickers
 
 # -------------------- Alpha Vantage Daily OHLC --------------------
 @st.cache_data(ttl=1800)
@@ -61,21 +64,22 @@ def compute_daily_movers(universe):
     movers = []
     for symbol in universe:
         df = fetch_alpha_daily(symbol)
-        if not df.empty and len(df) > 20:
-            latest = df.iloc[-1]
-            prev = df.iloc[-2]
-            avg_vol = df["5. volume"].tail(20).mean()
-            rel_vol = latest["5. volume"] / avg_vol if avg_vol > 0 else 0
-            change_pct = ((latest["4. close"] - prev["4. close"]) / prev["4. close"]) * 100
-            movers.append({
-                "ticker": symbol,
-                "price": round(latest["4. close"], 2),
-                "change_percent": round(change_pct, 2),
-                "volume": int(latest["5. volume"]),
-                "relative_volume": round(rel_vol, 2)
-            })
-            if DEBUG_MODE:
-                st.write(f"DEBUG {symbol}: price={latest['4. close']:.2f}, change={change_pct:.2f}%, rel_vol={rel_vol:.2f}")
+        if df.empty or len(df) < 20:
+            continue
+        latest = df.iloc[-1]
+        prev = df.iloc[-2]
+        avg_vol = df["5. volume"].tail(20).mean()
+        rel_vol = latest["5. volume"] / avg_vol if avg_vol > 0 else 0
+        change_pct = ((latest["4. close"] - prev["4. close"]) / prev["4. close"]) * 100
+        movers.append({
+            "ticker": symbol,
+            "price": round(latest["4. close"], 2),
+            "change_percent": round(change_pct, 2),
+            "volume": int(latest["5. volume"]),
+            "relative_volume": round(rel_vol, 2)
+        })
+        if DEBUG_MODE:
+            st.write(f"DEBUG {symbol}: price={latest['4. close']:.2f}, change={change_pct:.2f}%, rel_vol={rel_vol:.2f}")
     movers_df = pd.DataFrame(movers)
     if not movers_df.empty:
         gainers = movers_df.sort_values("change_percent", ascending=False).head(10)
@@ -108,8 +112,8 @@ def score_stock(row, news_keywords):
         score += 2
     if any(row["ticker"] in kw for kw in news_keywords):
         score += 2
-    # Float < 5M requires external dataset; placeholder logic
-    if row["volume"] < 5_000_000:  # proxy for low float
+    # Float < 5M requires external dataset; placeholder proxy
+    if row["volume"] < 5_000_000:
         score += 1
     return score
 
@@ -121,8 +125,8 @@ def generate_predictions(movers_df, news_keywords):
 
 # -------------------- STREAMLIT UI --------------------
 def main():
-    st.set_page_config(page_title="Market-Wide Scanner", layout="wide")
-    st.title("📊 Market-Wide Demand/Supply Scanner")
+    st.set_page_config(page_title="S&P 500 Market Scanner", layout="wide")
+    st.title("📊 S&P 500 Demand/Supply Scanner")
     st.caption("Daily movers + hourly charts + news thumbnails + prediction engine")
 
     last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -133,7 +137,7 @@ def main():
     )
 
     # Universe
-    universe = load_universe()
+    universe = load_sp500_universe()
 
     # Compute movers
     gainers, losers, actives, movers_df = compute_daily_movers(universe)
@@ -189,6 +193,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
