@@ -1,4 +1,4 @@
-# scanner_sp500_dashboard.py
+# scanner_sp500_sidebar.py
 
 import streamlit as st
 import pandas as pd
@@ -121,9 +121,24 @@ def main():
     last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.caption(f"Last Updated: {last_updated}")
 
+    # Sidebar filter panel
+    st.sidebar.header("⚙️ Warrior Trading Criteria")
+    min_rel_vol = st.sidebar.slider("Relative Volume ≥", 1, 10, 5)
+    min_change = st.sidebar.slider("Percent Change ≥", 0, 100, 30)
+    price_range = st.sidebar.slider("Price Range ($)", 1, 100, (3, 20))
+    max_float_proxy = st.sidebar.slider("Max Volume (proxy for float)", 1_000_000, 50_000_000, 5_000_000)
+
     # Universe
     universe = load_sp500_universe()
     movers_df = compute_daily_movers(universe)
+
+    # Apply filters
+    filtered = movers_df[
+        (movers_df["relative_volume"] >= min_rel_vol) &
+        (movers_df["change_percent"] >= min_change) &
+        (movers_df["price"].between(price_range[0], price_range[1])) &
+        (movers_df["volume"] <= max_float_proxy)
+    ]
 
     # Quick Metrics
     if not movers_df.empty:
@@ -141,11 +156,9 @@ def main():
         ["📈 Movers", "📉 Charts", "📰 News", "🔮 Predictions"]
     )
 
-    # Movers Tab with filters
+    # Movers Tab
     with tab_movers:
-        st.subheader("Market Movers")
-        min_rel_vol = st.slider("Filter by Relative Volume", 1, 10, 5)
-        filtered = movers_df[movers_df["relative_volume"] >= min_rel_vol]
+        st.subheader("Filtered Market Movers")
         st.dataframe(filtered.style.background_gradient(subset=["change_percent"], cmap="RdYlGn"))
 
     # Charts Tab
@@ -181,7 +194,7 @@ def main():
     with tab_predict:
         st.subheader("Prediction Engine")
         news_keywords = [article.get("title", "") for article in fetch_polygon_news()]
-        scored = generate_predictions(movers_df, news_keywords)
+        scored = generate_predictions(filtered, news_keywords)
         st.dataframe(scored.style.background_gradient(subset=["score"], cmap="Blues"))
 
 if __name__ == "__main__":
