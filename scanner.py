@@ -7,9 +7,10 @@ import requests
 from streamlit_autorefresh import st_autorefresh
 
 # -------------------- CONFIG --------------------
-POLYGON_API_KEY = st.secrets["aZTfdpYgZ0kIAVwdILxPygSHdZ0CrDBu"]
-ALPHA_API_KEY = st.secrets["HV1L0BLBFPRE2FYQ"]
-RAPIDAPI_KEY = st.secrets["cd27946ademsh76a9f1fb077b8d4p1613f0jsnce25c6a2cb31"]
+POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
+ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]
+RAPIDAPI_KEY = st.secrets["RAPIDAPI_KEY"]
+
 
 # -------------------- POLYGON NEWS --------------------
 @st.cache_data(ttl=600)
