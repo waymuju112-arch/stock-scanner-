@@ -1,4 +1,4 @@
-# scanner_sp500_csv.py
+# scanner_sp500_dashboard.py
 
 import streamlit as st
 import pandas as pd
@@ -11,16 +11,10 @@ POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
 DEBUG_MODE = st.secrets.get("ADMIN_DEBUG", False)
 
 # -------------------- Load Universe from CSV --------------------
-@st.cache_data(ttl=86400)  # refresh daily
+@st.cache_data(ttl=86400)
 def load_sp500_universe():
-    try:
-        df = pd.read_csv("sp500.csv")
-        return df["Symbol"].dropna().unique().tolist()
-    except Exception as e:
-        st.warning("Failed to load sp500.csv, falling back to default list.")
-        if DEBUG_MODE:
-            st.write("DEBUG CSV ERROR:", e)
-        return ["AAPL","MSFT","TSLA","AMZN","NVDA"]
+    df = pd.read_csv("sp500.csv")
+    return df["Symbol"].dropna().unique().tolist()
 
 # -------------------- Alpha Vantage Daily OHLC --------------------
 @st.cache_data(ttl=1800)
@@ -83,13 +77,7 @@ def compute_daily_movers(universe):
             "relative_volume": round(rel_vol, 2)
         })
         progress.progress((i+1)/len(universe))
-    movers_df = pd.DataFrame(movers)
-    if not movers_df.empty:
-        gainers = movers_df.sort_values("change_percent", ascending=False).head(10)
-        losers = movers_df.sort_values("change_percent", ascending=True).head(10)
-        actives = movers_df.sort_values("volume", ascending=False).head(10)
-        return gainers, losers, actives, movers_df
-    return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    return pd.DataFrame(movers)
 
 # -------------------- Polygon News --------------------
 @st.cache_data(ttl=900)
@@ -115,8 +103,7 @@ def score_stock(row, news_keywords):
         score += 2
     if any(row["ticker"] in kw for kw in news_keywords):
         score += 2
-    # Float < 5M requires external dataset; proxy with volume
-    if row["volume"] < 5_000_000:
+    if row["volume"] < 5_000_000:  # proxy for low float
         score += 1
     return score
 
@@ -128,39 +115,42 @@ def generate_predictions(movers_df, news_keywords):
 
 # -------------------- STREAMLIT UI --------------------
 def main():
-    st.set_page_config(page_title="S&P 500 Market Scanner", layout="wide")
-    st.title("📊 S&P 500 Demand/Supply Scanner")
-    st.caption("Daily movers + hourly charts + news thumbnails + prediction engine")
+    st.set_page_config(page_title="S&P 500 Dashboard", layout="wide")
+    st.title("📊 S&P 500 Demand/Supply Dashboard")
 
     last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    st.markdown(f"**Last Updated:** {last_updated}")
-
-    tab_movers, tab_charts, tab_news, tab_predict = st.tabs(
-        ["📈 Movers", "📉 Hourly Charts", "📰 News", "🔮 Predictions"]
-    )
+    st.caption(f"Last Updated: {last_updated}")
 
     # Universe
     universe = load_sp500_universe()
+    movers_df = compute_daily_movers(universe)
 
-    # Compute movers
-    gainers, losers, actives, movers_df = compute_daily_movers(universe)
+    # Quick Metrics
+    if not movers_df.empty:
+        gainers = movers_df.sort_values("change_percent", ascending=False).head(10)
+        losers = movers_df.sort_values("change_percent", ascending=True).head(10)
+        actives = movers_df.sort_values("volume", ascending=False).head(10)
 
-    # Movers Tab
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Top Gainer", gainers.iloc[0]["ticker"], f"{gainers.iloc[0]['change_percent']}%")
+        col2.metric("Top Loser", losers.iloc[0]["ticker"], f"{losers.iloc[0]['change_percent']}%")
+        col3.metric("Most Active", actives.iloc[0]["ticker"], f"{actives.iloc[0]['volume']:,}")
+
+    # Tabs
+    tab_movers, tab_charts, tab_news, tab_predict = st.tabs(
+        ["📈 Movers", "📉 Charts", "📰 News", "🔮 Predictions"]
+    )
+
+    # Movers Tab with filters
     with tab_movers:
-        st.header("Previous Day Movers")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("🚀 Gainers")
-            st.dataframe(gainers, use_container_width=True)
-        with col2:
-            st.subheader("📉 Losers")
-            st.dataframe(losers, use_container_width=True)
-        st.subheader("🔥 Most Active")
-        st.dataframe(actives, use_container_width=True)
+        st.subheader("Market Movers")
+        min_rel_vol = st.slider("Filter by Relative Volume", 1, 10, 5)
+        filtered = movers_df[movers_df["relative_volume"] >= min_rel_vol]
+        st.dataframe(filtered.style.background_gradient(subset=["change_percent"], cmap="RdYlGn"))
 
     # Charts Tab
     with tab_charts:
-        st.header("Hourly Bar Chart (Previous Day)")
+        st.subheader("Hourly Bar Chart")
         symbol = st.text_input("Enter a ticker:", "AAPL")
         df = fetch_alpha_intraday(symbol)
         if not df.empty:
@@ -172,7 +162,7 @@ def main():
 
     # News Tab
     with tab_news:
-        st.header("Latest Market News")
+        st.subheader("Latest Market News")
         news = fetch_polygon_news()
         if news:
             for article in news[:10]:
@@ -189,13 +179,15 @@ def main():
 
     # Prediction Tab
     with tab_predict:
-        st.header("Prediction Engine")
+        st.subheader("Prediction Engine")
         news_keywords = [article.get("title", "") for article in fetch_polygon_news()]
         scored = generate_predictions(movers_df, news_keywords)
-        st.dataframe(scored[["ticker","price","change_percent","volume","relative_volume","score"]], use_container_width=True)
+        st.dataframe(scored.style.background_gradient(subset=["score"], cmap="Blues"))
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
