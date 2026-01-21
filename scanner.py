@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 from streamlit_autorefresh import st_autorefresh
 
 # -------------------- CONFIG --------------------
-BENZINGA_API_KEY = "YOUR_BENZINGA_API_KEY"
-NEWS_API_KEY = "YOUR_NEWSAPI_KEY"  # from https://newsapi.org
+BENZINGA_API_KEY = "bz.WTQQ73ASIU4DILGULR76RAWSOFSRU2XU"
+NEWS_API_KEY = "pub_08ee44a47dff4904afbb1f82899a98d7"  
 
 # -------------------- BENZINGA DATA FETCH --------------------
 def fetch_market_data():
