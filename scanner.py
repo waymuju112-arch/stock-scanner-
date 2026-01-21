@@ -3,14 +3,14 @@
 import time
 import yfinance as yf
 from yfinance.exceptions import YFRateLimitError
-from newsapi import NewsApiClient
+import requests
 import streamlit as st
 import matplotlib.pyplot as plt
 import smtplib
 from email.mime.text import MIMEText
 
 # -------------------- CONFIG --------------------
-NEWS_API_KEY = 'YOUR_NEWSAPI_KEY'
+NEWS_API_KEY = 'YOUR_NEWSAPI_KEY'   # get one free at https://newsapi.org
 EMAIL_ADDRESS = 'your_email@gmail.com'
 EMAIL_PASSWORD = 'YOUR_APP_PASSWORD'
 RECIPIENT_EMAIL = 'recipient_email@gmail.com'
@@ -54,11 +54,19 @@ def scan_stocks(tickers):
         })
     return results
 
+# -------------------- NEWS FETCH VIA REQUESTS --------------------
 def get_news(symbol):
-    newsapi = NewsApiClient(api_key=NEWS_API_KEY)
-    articles = newsapi.get_everything(q=symbol, language='en', sort_by='publishedAt', page_size=3)
-    return [a['title'] for a in articles['articles']]
+    url = f"https://newsapi.org/v2/everything?q={symbol}&language=en&sortBy=publishedAt&apiKey={NEWS_API_KEY}"
+    try:
+        response = requests.get(url)
+        data = response.json()
+        if "articles" in data:
+            return [a['title'] for a in data['articles'][:3]]
+    except Exception:
+        return []
+    return []
 
+# -------------------- CRITERIA FILTER --------------------
 def filter_criteria(stock_data):
     filtered = []
     for stock in stock_data:
@@ -70,6 +78,7 @@ def filter_criteria(stock_data):
             filtered.append(stock)
     return filtered
 
+# -------------------- EMAIL DELIVERY --------------------
 def send_email(filtered_stocks):
     body = "Tadi's Scanner Results:\n\n"
     for stock in filtered_stocks:
@@ -134,6 +143,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
