@@ -3,10 +3,10 @@
 import requests
 import streamlit as st
 import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
 
 # -------------------- CONFIG --------------------
-BENZINGA_API_KEY = "YOUR_BENZINGA_API_KEY"
+BENZINGA_API_KEY = "bz.WTQQ73ASIU4DILGULR76RAWSOFSRU2XU"
+NEWS_API_KEY = "pub_08ee44a47dff4904afbb1f82899a98d7"  
 
 # -------------------- BENZINGA DATA FETCH --------------------
 def fetch_market_data():
@@ -17,12 +17,20 @@ def fetch_market_data():
         return response.json().get("movers", [])
     return []
 
-def fetch_news():
-    """Fetch latest market news headlines."""
+def fetch_benzinga_news():
+    """Fetch latest market news headlines from Benzinga."""
     url = f"https://api.benzinga.com/api/v2/news?token={BENZINGA_API_KEY}&channels=markets&limit=10"
     response = requests.get(url)
-    if response.status_code == 200:
+    if response.status_code == 200 and response.json():
         return response.json()
+    return []
+
+def fetch_news_fallback():
+    """Fallback to NewsAPI.org if Benzinga returns nothing."""
+    url = f"https://newsapi.org/v2/top-headlines?category=business&apiKey={NEWS_API_KEY}&pageSize=10"
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json().get("articles", [])
     return []
 
 # -------------------- FILTER ENGINE --------------------
@@ -54,7 +62,7 @@ def filter_stocks(movers):
 
 # -------------------- STREAMLIT UI --------------------
 def plot_trend(symbol):
-    """Placeholder trend chart (Benzinga doesn’t provide historical candles in free tier)."""
+    """Placeholder trend chart (Benzinga free tier doesn’t provide historical candles)."""
     plt.figure(figsize=(6, 3))
     plt.plot([1, 2, 3, 4, 5], [10, 12, 15, 14, 18], marker="o", color="green")
     plt.title(f"{symbol} Trend Projection")
@@ -75,6 +83,10 @@ def show_criteria():
 
 def main():
     st.set_page_config(page_title="Tadi's Benzinga Scanner", layout="wide")
+
+    # Auto-refresh every 60 seconds
+    st_autorefresh = st.experimental_rerun  # fallback if st_autorefresh not available
+    st_autorefresh_interval = 60000  # 60 seconds
 
     st.title("📈 Tadi's Scanner — Full Market Edge")
     st.subheader("Real-time Benzinga data with Warrior Trading filters")
@@ -103,11 +115,17 @@ def main():
     # Right: Market News
     with col3:
         st.markdown("### 📰 Latest Market News")
-        news = fetch_news()
+        news = fetch_benzinga_news()
+        if not news:
+            news = fetch_news_fallback()
+
         if news:
             for article in news:
-                st.write(f"**{article['title']}**")
-                st.caption(article['url'])
+                title = article.get("title") or article.get("headline")
+                url = article.get("url")
+                st.write(f"**{title}**")
+                if url:
+                    st.caption(url)
         else:
             st.info("No news available right now.")
 
