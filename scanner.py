@@ -10,7 +10,6 @@ from streamlit_autorefresh import st_autorefresh
 POLYGON_API_KEY = "aZTfdpYgZ0kIAVwdILxPygSHdZ0CrDBu"
 FINNHUB_API_KEY = "d5o3171r01qma2b78u4gd5o3171r01qma2b78u50"
 
-
 # -------------------- POLYGON MOVERS --------------------
 def fetch_polygon_movers():
     url = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/gainers?apiKey={POLYGON_API_KEY}"
@@ -32,6 +31,18 @@ def fetch_finnhub_profile(symbol):
     except Exception as e:
         print(f"Error fetching Finnhub profile for {symbol}:", e)
     return {}
+
+# -------------------- FINNHUB NEWS --------------------
+def fetch_finnhub_news():
+    """Fetch latest market news from Finnhub.io"""
+    url = f"https://finnhub.io/api/v1/news?category=general&token={FINNHUB_API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
+            return response.json()
+    except Exception as e:
+        print("Error fetching Finnhub news:", e)
+    return []
 
 # -------------------- SCORING ENGINE --------------------
 def score_stocks(movers, vol_thresh, change_thresh, price_min, price_max, float_max):
@@ -82,7 +93,7 @@ def main():
     st_autorefresh(interval=60000, limit=None, key="refresh")
 
     st.title("📈 Tadi's Market Scanner")
-    st.caption("Powered by Polygon.io (movers) + Finnhub.io (float & fundamentals)")
+    st.caption("Powered by Polygon.io (movers) + Finnhub.io (float & news)")
 
     tab_filters, tab_stocks, tab_analytics, tab_news = st.tabs(["⚙️ Filters", "🚀 Stocks", "📊 Analytics", "📰 News"])
 
