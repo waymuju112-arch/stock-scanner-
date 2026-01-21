@@ -1,37 +1,36 @@
-# scanner_secure_fmp_v4_intraday_news_debug.py
+# hybrid_scanner_polygon_alpha.py
 
 import streamlit as st
-import matplotlib.pyplot as plt
 import pandas as pd
 import requests
-from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 
 # -------------------- CONFIG --------------------
-FMP_API_KEY = st.secrets["FMP_API_KEY"]
-ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]
 POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
+ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]
 DEBUG_MODE = st.secrets.get("ADMIN_DEBUG", False)
 
-# -------------------- FMP v4 Movers --------------------
-@st.cache_data(ttl=120)
-def fetch_fmp_movers(category="gainers"):
-    url = f"https://financialmodelingprep.com/api/v4/stock_market/{category}?apikey={FMP_API_KEY}"
+# -------------------- Polygon Movers --------------------
+@st.cache_data(ttl=900)  # cache for 15 minutes
+def fetch_polygon_movers(direction="gainers"):
+    url = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/{direction}?apiKey={POLYGON_API_KEY}"
     try:
         r = requests.get(url, timeout=10)
         if DEBUG_MODE:
-            st.write(f"DEBUG FMP {category} Status:", r.status_code)
+            st.write(f"DEBUG Polygon {direction}:", r.status_code)
             st.json(r.json())
         if r.status_code == 200:
-            return pd.DataFrame(r.json())
+            return pd.DataFrame(r.json().get("tickers", []))
+        elif r.status_code == 429:  # quota exceeded
+            st.warning("Polygon quota exceeded. Switching to fallback watchlist.")
+            return None
     except Exception as e:
         if DEBUG_MODE:
-            st.write(f"DEBUG ERROR FMP {category}:", e)
-        st.warning(f"FMP {category} fetch failed.")
-    return pd.DataFrame()
+            st.write(f"DEBUG ERROR Polygon {direction}:", e)
+    return None
 
 # -------------------- Alpha Vantage Intraday --------------------
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=120)  # cache for 2 minutes
 def fetch_alpha_intraday(symbol):
     url = (
         f"https://www.alphavantage.co/query?"
@@ -51,108 +50,82 @@ def fetch_alpha_intraday(symbol):
     except Exception as e:
         if DEBUG_MODE:
             st.write("DEBUG ERROR Alpha Intraday:", e)
-        st.warning(f"Alpha Vantage intraday fetch failed for {symbol}.")
     return pd.DataFrame()
 
-# -------------------- Polygon News --------------------
-@st.cache_data(ttl=900)
-def fetch_polygon_news():
-    url = f"https://api.polygon.io/v2/reference/news?apiKey={POLYGON_API_KEY}"
-    try:
-        r = requests.get(url, timeout=10)
-        if DEBUG_MODE:
-            st.write("DEBUG Polygon News:", r.status_code)
-            st.json(r.json())
-        if r.status_code == 200 and "application/json" in r.headers.get("Content-Type", ""):
-            return r.json().get("results", [])
-    except Exception as e:
-        if DEBUG_MODE:
-            st.write("DEBUG ERROR Polygon News:", e)
-        st.warning("Polygon news fetch failed.")
-    return []
+# -------------------- Fallback Watchlist Movers --------------------
+def compute_watchlist_movers(watchlist):
+    movers = []
+    for symbol in watchlist:
+        df = fetch_alpha_intraday(symbol)
+        if not df.empty:
+            latest = df.iloc[-1]["4. close"]
+            prev = df.iloc[0]["4. close"]
+            change_pct = ((latest - prev) / prev) * 100
+            movers.append({"symbol": symbol, "latest": latest, "change_pct": change_pct})
+    return pd.DataFrame(movers)
 
 # -------------------- STREAMLIT UI --------------------
 def main():
-    st.set_page_config(page_title="Tadi's Market Scanner (FMP v4)", layout="wide")
-    st_autorefresh(interval=60000, limit=100, key="refresh")
+    st.set_page_config(page_title="Hybrid Market Scanner", layout="wide")
 
-    st.title("📈 Tadi's Market Scanner")
-    st.caption("Powered by FMP v4 movers, Alpha Vantage intraday, and Polygon news")
+    st.title("📈 Hybrid Market Scanner")
+    st.caption("Polygon movers + Alpha Vantage intraday, with fallback watchlist")
 
     last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.markdown(f"**Last Updated:** {last_updated}")
 
-    tab_movers, tab_charts, tab_news = st.tabs(["📊 Market Movers", "📈 Charts", "📰 News"])
+    # Manual refresh button
+    if st.button("🔄 Refresh Movers"):
+        st.cache_data.clear()  # clear cache to force fresh fetch
 
-    # Fetch data
-    gainers = fetch_fmp_movers("gainers")
-    losers = fetch_fmp_movers("losers")
-    actives = fetch_fmp_movers("actives")
+    tab_movers, tab_charts = st.tabs(["📊 Market Movers", "📈 Charts"])
 
-    # Market Movers Tab
+    # Fetch movers
+    gainers = fetch_polygon_movers("gainers")
+    losers = fetch_polygon_movers("losers")
+
+    # Fallback if quota exceeded
+    if gainers is None or losers is None:
+        watchlist = ["AAPL", "MSFT", "TSLA", "AMZN", "NVDA"]  # customizable
+        st.info("Using fallback watchlist movers")
+        gainers = compute_watchlist_movers(watchlist)
+        losers = pd.DataFrame()  # optional
+
+    # Movers Tab
     with tab_movers:
         st.header("Top Market Movers")
         col1, col2 = st.columns(2)
 
         with col1:
             st.subheader("🚀 Gainers")
-            if not gainers.empty:
+            if gainers is not None and not gainers.empty:
                 st.dataframe(gainers, use_container_width=True)
-                if "changesPercentage" in gainers.columns:
-                    st.bar_chart(gainers.set_index("symbol")["changesPercentage"].head(10))
+                if "change_pct" in gainers.columns:
+                    st.bar_chart(gainers.set_index("symbol")["change_pct"].head(10))
             else:
-                st.info("No gainers data available right now.")
+                st.info("No gainers data available.")
 
         with col2:
             st.subheader("📉 Losers")
-            if not losers.empty:
+            if losers is not None and not losers.empty:
                 st.dataframe(losers, use_container_width=True)
-                if "changesPercentage" in losers.columns:
-                    st.bar_chart(losers.set_index("symbol")["changesPercentage"].head(10))
+                if "change_pct" in losers.columns:
+                    st.bar_chart(losers.set_index("symbol")["change_pct"].head(10))
             else:
-                st.info("No losers data available right now.")
-
-        st.subheader("🔥 Most Active")
-        if not actives.empty:
-            st.dataframe(actives, use_container_width=True)
-        else:
-            st.info("No active stocks data available right now.")
+                st.info("No losers data available.")
 
     # Charts Tab
     with tab_charts:
-        st.header("Intraday Chart for Top Gainer")
-        if not gainers.empty:
-            top_symbol = gainers.iloc[0]["symbol"]
-            st.subheader(f"📈 Intraday (5min) Chart for {top_symbol}")
-            ohlc = fetch_alpha_intraday(top_symbol)
-            if not ohlc.empty:
-                st.line_chart(ohlc["4. close"])
-            else:
-                st.info(f"No intraday data available for {top_symbol}.")
+        st.header("Intraday Chart for Selected Symbol")
+        symbol = st.text_input("Enter a ticker (e.g., AAPL, TSLA):", "AAPL")
+        ohlc = fetch_alpha_intraday(symbol)
+        if not ohlc.empty:
+            st.line_chart(ohlc["4. close"])
         else:
-            st.info("No chart data available right now.")
-
-    # News Tab
-    with tab_news:
-        st.header("Latest Market News")
-        news = fetch_polygon_news()
-        if news:
-            for article in news[:10]:
-                with st.expander(article.get("title", "News Item")):
-                    image_url = article.get("image_url")
-                    if image_url:
-                        st.image(image_url, width=200)
-                    st.write(article.get("description", ""))
-                    url = article.get("article_url")
-                    if url:
-                        st.markdown(f"[Read more]({url})")
-        else:
-            st.info("No news available right now.")
+            st.info(f"No intraday data available for {symbol}.")
 
 if __name__ == "__main__":
     main()
-
-
 
 
 
