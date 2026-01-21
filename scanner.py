@@ -1,4 +1,4 @@
-# scanner_sp500_classic.py
+# scanner_sp500_with_news.py
 
 import streamlit as st
 import pandas as pd
@@ -85,6 +85,19 @@ def compute_daily_movers(universe):
         return gainers, losers, actives, movers_df
     return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
+# -------------------- Polygon News --------------------
+@st.cache_data(ttl=900)
+def fetch_polygon_news():
+    url = f"https://api.polygon.io/v2/reference/news?apiKey={POLYGON_API_KEY}"
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            return r.json().get("results", [])
+    except Exception as e:
+        if DEBUG_MODE:
+            st.write("DEBUG ERROR Polygon News:", e)
+    return []
+
 # -------------------- STREAMLIT UI --------------------
 def main():
     st.set_page_config(page_title="S&P 500 Dashboard", layout="wide")
@@ -105,7 +118,7 @@ def main():
         col3.metric("Most Active", actives.iloc[0]["ticker"], f"{actives.iloc[0]['volume']:,}")
 
     # Tabs
-    tab_movers, tab_charts = st.tabs(["📈 Movers", "📉 Charts"])
+    tab_movers, tab_charts, tab_news = st.tabs(["📈 Movers", "📉 Charts", "📰 News"])
 
     # Movers Tab
     with tab_movers:
@@ -128,11 +141,29 @@ def main():
         else:
             st.info(f"No intraday data for {symbol}.")
 
+    # News Tab
+    with tab_news:
+        st.subheader("Latest Market News")
+        news = fetch_polygon_news()
+        if news:
+            for article in news[:8]:  # show top 8 with larger panels
+                st.markdown("---")
+                col1, col2 = st.columns([1,3])
+                with col1:
+                    image_url = article.get("image_url")
+                    if image_url:
+                        st.image(image_url, use_container_width=True)
+                with col2:
+                    st.markdown(f"### {article.get('title','News Item')}")
+                    st.write(article.get("description",""))
+                    url = article.get("article_url")
+                    if url:
+                        st.markdown(f"[🔗 Read more]({url})")
+        else:
+            st.info("No news available.")
+
 if __name__ == "__main__":
     main()
-
-
-
 
 
 
