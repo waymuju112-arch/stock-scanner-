@@ -46,8 +46,8 @@ def fetch_news_fallback():
     return []
 
 # -------------------- FILTER ENGINE --------------------
-def filter_stocks(movers):
-    """Apply Warrior Trading criteria to Benzinga movers."""
+def filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max, float_max):
+    """Apply adjustable criteria to Benzinga movers."""
     filtered = []
     for stock in movers:
         symbol = stock.get("ticker")
@@ -59,10 +59,10 @@ def filter_stocks(movers):
 
         volume_ratio = volume / avg_volume if avg_volume > 0 else 0
 
-        if (volume_ratio >= 5 and
-            change_pct >= 30 and
-            3 <= price <= 20 and
-            float_shares <= 5_000_000):
+        if (volume_ratio >= vol_ratio_thresh and
+            change_pct >= change_thresh and
+            price_min <= price <= price_max and
+            float_shares <= float_max):
             filtered.append({
                 "Symbol": symbol,
                 "Price": price,
@@ -86,11 +86,10 @@ def show_criteria():
     st.markdown("### 📋 Scanner Criteria")
     st.markdown("""
     **Indicators of High Demand and Low Supply**
-    - ✅ Demand: 5x Relative Volume  
-    - ✅ Demand: Already up 30% on the day  
-    - ✅ Demand: News Event moving the stock higher  
-    - ✅ Demand: Price Between $3.00 - $20.00  
-    - ✅ Supply: Float < 5M shares  
+    - Demand: Relative Volume threshold (adjustable)  
+    - Demand: % Change threshold (adjustable)  
+    - Demand: Price range (adjustable)  
+    - Supply: Float max (adjustable)  
     """)
 
 def main():
@@ -100,19 +99,24 @@ def main():
     st_autorefresh(interval=60000, limit=None, key="refresh")
 
     st.title("📈 Tadi's Scanner — Full Market Edge")
-    st.subheader("Real-time Benzinga data with Warrior Trading filters")
+    st.subheader("Real-time Benzinga data with adjustable filters")
 
     col1, col2, col3 = st.columns([1, 2, 1])
 
-    # Left: Criteria
+    # Left: Criteria + Sliders
     with col1:
         show_criteria()
+        st.markdown("### 🔧 Adjust Filters")
+        vol_ratio_thresh = st.slider("Relative Volume (x)", 1, 10, 5)
+        change_thresh = st.slider("Daily % Change", 0, 100, 30)
+        price_min, price_max = st.slider("Price Range ($)", 1, 50, (3, 20))
+        float_max = st.slider("Max Float (shares)", 1_000_000, 50_000_000, 5_000_000, step=1_000_000)
 
     # Middle: Filtered Stocks
     with col2:
         st.markdown("### 🚀 Stocks Meeting Criteria")
         movers = fetch_market_data()
-        filtered = filter_stocks(movers)
+        filtered = filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max, float_max)
 
         if filtered:
             for stock in filtered:
@@ -142,8 +146,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
 
 
 
