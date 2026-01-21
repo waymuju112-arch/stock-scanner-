@@ -8,8 +8,8 @@ from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 
 # -------------------- CONFIG --------------------
-FMP_API_KEY = st.secrets["FMP_API_KEY"]       # your new FMP v4 key
-ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]   # still used for intraday OHLC
+FMP_API_KEY = st.secrets["FMP_API_KEY"]
+ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]
 POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
 DEBUG_MODE = st.secrets.get("ADMIN_DEBUG", False)
 
@@ -21,7 +21,7 @@ def fetch_fmp_movers(category="gainers"):
         r = requests.get(url, timeout=10)
         if DEBUG_MODE:
             st.write(f"DEBUG FMP {category} Status:", r.status_code)
-            st.json(r.json())  # show full JSON payload in debug mode
+            st.json(r.json())
         if r.status_code == 200:
             return pd.DataFrame(r.json())
     except Exception as e:
@@ -30,7 +30,7 @@ def fetch_fmp_movers(category="gainers"):
         st.warning(f"FMP {category} fetch failed.")
     return pd.DataFrame()
 
-# -------------------- Alpha Vantage Intraday (5min) --------------------
+# -------------------- Alpha Vantage Intraday --------------------
 @st.cache_data(ttl=300)
 def fetch_alpha_intraday(symbol):
     url = (
@@ -79,13 +79,12 @@ def main():
     st.title("📈 Tadi's Market Scanner")
     st.caption("Powered by FMP v4 movers, Alpha Vantage intraday, and Polygon news")
 
-    # Add timestamp
     last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.markdown(f"**Last Updated:** {last_updated}")
 
     tab_movers, tab_charts, tab_news = st.tabs(["📊 Market Movers", "📈 Charts", "📰 News"])
 
-    # Fetch data from FMP v4
+    # Fetch data
     gainers = fetch_fmp_movers("gainers")
     losers = fetch_fmp_movers("losers")
     actives = fetch_fmp_movers("actives")
