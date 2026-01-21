@@ -1,8 +1,9 @@
-# benzinga_scanner.py
+# scanner.py
 
 import requests
 import streamlit as st
 import matplotlib.pyplot as plt
+from streamlit_autorefresh import st_autorefresh
 
 # -------------------- CONFIG --------------------
 BENZINGA_API_KEY = "bz.WTQQ73ASIU4DILGULR76RAWSOFSRU2XU"
@@ -85,8 +86,7 @@ def main():
     st.set_page_config(page_title="Tadi's Benzinga Scanner", layout="wide")
 
     # Auto-refresh every 60 seconds
-    st_autorefresh = st.experimental_rerun  # fallback if st_autorefresh not available
-    st_autorefresh_interval = 60000  # 60 seconds
+    st_autorefresh(interval=60000, limit=None, key="refresh")
 
     st.title("📈 Tadi's Scanner — Full Market Edge")
     st.subheader("Real-time Benzinga data with Warrior Trading filters")
@@ -131,6 +131,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
