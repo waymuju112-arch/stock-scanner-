@@ -7,9 +7,9 @@ import requests
 from streamlit_autorefresh import st_autorefresh
 
 # -------------------- CONFIG --------------------
-POLYGON_API_KEY = "YOUR_POLYGON_KEY"
-ALPHA_API_KEY = "YOUR_ALPHA_KEY"
-FINNHUB_API_KEY = "YOUR_FINNHUB_KEY"
+POLYGON_API_KEY = "aZTfdpYgZ0kIAVwdILxPygSHdZ0CrDBu"
+ALPHA_API_KEY = "HV1L0BLBFPRE2FYQ"
+FINNHUB_API_KEY = "d5o3171r01qma2b78u4gd5o3171r01qma2b78u50"
 
 # -------------------- POLYGON NEWS --------------------
 def fetch_polygon_news():
