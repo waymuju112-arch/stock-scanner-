@@ -1,16 +1,16 @@
-# scanner_secure_rapidapi_alpha_polygon.py
+# scanner_secure_rapidapi_alpha_polygon_timestamp.py
 
 import streamlit as st
 import matplotlib.pyplot as plt
 import pandas as pd
 import requests
 from streamlit_autorefresh import st_autorefresh
+from datetime import datetime
 
 # -------------------- CONFIG --------------------
 POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
 ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]
 RAPIDAPI_KEY = st.secrets["RAPIDAPI_KEY"]
-
 
 # -------------------- POLYGON NEWS --------------------
 @st.cache_data(ttl=600)
@@ -89,6 +89,10 @@ def main():
 
     st.title("📈 Tadi's Market Scanner")
     st.caption("Secured and optimized with caching, secrets, and quota protection")
+
+    # Add timestamp
+    last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    st.markdown(f"**Last Updated:** {last_updated}")
 
     tab_movers, tab_charts, tab_news = st.tabs(["📊 Market Movers", "📈 Charts", "📰 News"])
 
