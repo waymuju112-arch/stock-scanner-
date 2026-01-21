@@ -1,56 +1,44 @@
-# scanner_yahoo_fin_alpha_polygon_news.py
+# scanner_finnhub_alpha_polygon_news.py
 
 import streamlit as st
 import matplotlib.pyplot as plt
 import pandas as pd
 import requests
-from yahoo_fin import stock_info as si
 from streamlit_autorefresh import st_autorefresh
 
 # -------------------- CONFIG --------------------
-POLYGON_API_KEY = "aZTfdpYgZ0kIAVwdILxPygSHdZ0CrDBu"
-ALPHA_API_KEY = "HV1L0BLBFPRE2FYQ"
+POLYGON_API_KEY = "YOUR_POLYGON_KEY"
+ALPHA_API_KEY = "YOUR_ALPHA_KEY"
+FINNHUB_API_KEY = "YOUR_FINNHUB_KEY"
 
 # -------------------- POLYGON NEWS --------------------
 def fetch_polygon_news():
-    """Fetch latest market news from Polygon.io"""
     url = f"https://api.polygon.io/v2/reference/news?apiKey={POLYGON_API_KEY}"
     try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
-            return response.json().get("results", [])
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200 and "application/json" in r.headers.get("Content-Type", ""):
+            return r.json().get("results", [])
     except Exception as e:
         print("Error fetching Polygon news:", e)
     return []
 
-# -------------------- YAHOO FIN MOVERS --------------------
-def fetch_gainers(limit=100):
+# -------------------- FINNHUB MOVERS --------------------
+def fetch_finnhub_movers():
+    url = f"https://finnhub.io/api/v1/stock/market-movers?token={FINNHUB_API_KEY}"
     try:
-        gainers = si.get_day_gainers()
-        return gainers.head(limit)
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            gainers = pd.DataFrame(data.get("gainers", []))
+            losers = pd.DataFrame(data.get("losers", []))
+            active = pd.DataFrame(data.get("mostActive", []))
+            return gainers, losers, active
     except Exception as e:
-        print("Error fetching gainers:", e)
-    return pd.DataFrame()
-
-def fetch_losers(limit=100):
-    try:
-        losers = si.get_day_losers()
-        return losers.head(limit)
-    except Exception as e:
-        print("Error fetching losers:", e)
-    return pd.DataFrame()
-
-def fetch_most_active(limit=100):
-    try:
-        active = si.get_day_most_active()
-        return active.head(limit)
-    except Exception as e:
-        print("Error fetching most active:", e)
-    return pd.DataFrame()
+        print("Error fetching Finnhub movers:", e)
+    return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 # -------------------- ALPHA VANTAGE OHLC --------------------
 def fetch_alpha_daily(symbol):
-    """Fetch daily OHLC data for a symbol from Alpha Vantage"""
     url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={ALPHA_API_KEY}"
     try:
         r = requests.get(url, timeout=10)
@@ -59,8 +47,7 @@ def fetch_alpha_daily(symbol):
             if data:
                 df = pd.DataFrame.from_dict(data, orient="index").astype(float)
                 df.index = pd.to_datetime(df.index)
-                df = df.sort_index()
-                return df
+                return df.sort_index()
     except Exception as e:
         print(f"Error fetching Alpha Vantage data for {symbol}:", e)
     return pd.DataFrame()
@@ -68,23 +55,24 @@ def fetch_alpha_daily(symbol):
 # -------------------- SCORING ENGINE --------------------
 def score_stocks(df):
     scored = []
-    for _, row in df.iterrows():
-        symbol = row["Symbol"]
-        price = row["Price"]
-        change_pct = row["% Change"]
-        volume = row["Volume"]
+    if not df.empty:
+        for _, row in df.iterrows():
+            symbol = row.get("symbol")
+            price = row.get("price", 0)
+            change_pct = row.get("change", 0)
+            volume = row.get("volume", 0)
 
-        score_change = min(abs(change_pct) / 10, 1)
-        score_volume = min(volume / 1_000_000, 1)
-        match_score = round((score_change*0.6 + score_volume*0.4) * 100, 2)
+            score_change = min(abs(change_pct) / 10, 1)
+            score_volume = min(volume / 1_000_000, 1)
+            match_score = round((score_change*0.6 + score_volume*0.4) * 100, 2)
 
-        scored.append({
-            "Symbol": symbol,
-            "Price": price,
-            "Change (%)": change_pct,
-            "Volume": volume,
-            "Match %": match_score
-        })
+            scored.append({
+                "Symbol": symbol,
+                "Price": price,
+                "Change (%)": change_pct,
+                "Volume": volume,
+                "Match %": match_score
+            })
     return scored
 
 # -------------------- STREAMLIT UI --------------------
@@ -93,17 +81,14 @@ def main():
     st_autorefresh(interval=60000, limit=None, key="refresh")
 
     st.title("📈 Tadi's Market Scanner")
-    st.caption("Powered by Yahoo Finance (movers) + Alpha Vantage (OHLC charts) + Polygon.io (news)")
+    st.caption("Powered by Finnhub (movers) + Alpha Vantage (OHLC charts) + Polygon.io (news)")
 
     tab_movers, tab_charts, tab_news = st.tabs(["📊 Market Movers", "📈 Charts", "📰 News"])
 
     # Fetch data
-    gainers = fetch_gainers(limit=100)
-    losers = fetch_losers(limit=100)
-    active = fetch_most_active(limit=100)
-
-    scored_gainers = score_stocks(gainers) if not gainers.empty else []
-    scored_losers = score_stocks(losers) if not losers.empty else []
+    gainers, losers, active = fetch_finnhub_movers()
+    scored_gainers = score_stocks(gainers)
+    scored_losers = score_stocks(losers)
 
     # Market Movers Tab
     with tab_movers:
@@ -111,7 +96,7 @@ def main():
         col1, col2 = st.columns(2)
 
         with col1:
-            st.subheader("🚀 Top 100 Gainers")
+            st.subheader("🚀 Gainers")
             if scored_gainers:
                 df_gainers = pd.DataFrame(scored_gainers)
                 st.dataframe(df_gainers, use_container_width=True)
@@ -120,7 +105,7 @@ def main():
                 st.info("No gainers data available right now.")
 
         with col2:
-            st.subheader("📉 Top 100 Losers")
+            st.subheader("📉 Losers")
             if scored_losers:
                 df_losers = pd.DataFrame(scored_losers)
                 st.dataframe(df_losers, use_container_width=True)
