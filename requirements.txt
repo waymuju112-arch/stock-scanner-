@@ -1,7 +1,10 @@
 streamlit
-requests
-matplotlib
 streamlit-autorefresh
+matplotlib
+pandas
+requests
+yahoo_fin
+
 
 
 
