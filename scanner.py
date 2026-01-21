@@ -1,4 +1,4 @@
-# scanner_watchlist_alpha_news.py
+# scanner_snapshot_trend_news_predict.py
 
 import streamlit as st
 import pandas as pd
@@ -10,108 +10,119 @@ ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]
 POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
 DEBUG_MODE = st.secrets.get("ADMIN_DEBUG", False)
 
-# -------------------- Alpha Vantage Intraday --------------------
-@st.cache_data(ttl=120)  # cache for 2 minutes
-def fetch_alpha_intraday(symbol):
+# -------------------- Snapshot Movers (Massive API or fallback) --------------------
+@st.cache_data(ttl=900)
+def fetch_snapshot_movers(direction="gainers"):
+    url = f"https://api.marketdataapi.com/v2/snapshot/locale/us/markets/stocks/{direction}?apikey={POLYGON_API_KEY}"
+    try:
+        r = requests.get(url, timeout=10)
+        if DEBUG_MODE:
+            st.write(f"DEBUG Snapshot {direction}:", r.status_code)
+            st.json(r.json())
+        if r.status_code == 200:
+            return pd.DataFrame(r.json().get("tickers", []))
+    except Exception as e:
+        if DEBUG_MODE:
+            st.write(f"DEBUG ERROR Snapshot {direction}:", e)
+    return pd.DataFrame()
+
+# -------------------- Alpha Vantage Daily OHLC --------------------
+@st.cache_data(ttl=1800)
+def fetch_alpha_daily(symbol):
     url = (
         f"https://www.alphavantage.co/query?"
-        f"function=TIME_SERIES_INTRADAY&symbol={symbol}&interval=5min&apikey={ALPHA_API_KEY}&outputsize=compact"
+        f"function=TIME_SERIES_DAILY&symbol={symbol}&apikey={ALPHA_API_KEY}&outputsize=compact"
     )
     try:
         r = requests.get(url, timeout=10)
         if DEBUG_MODE:
-            st.write("DEBUG Alpha Intraday:", r.status_code)
-            st.json(r.json())
+            st.write(f"DEBUG Alpha Daily {symbol}:", r.status_code)
         if r.status_code == 200:
-            data = r.json().get("Time Series (5min)", {})
+            data = r.json().get("Time Series (Daily)", {})
             if data:
                 df = pd.DataFrame.from_dict(data, orient="index").astype(float)
                 df.index = pd.to_datetime(df.index)
                 return df.sort_index()
     except Exception as e:
         if DEBUG_MODE:
-            st.write("DEBUG ERROR Alpha Intraday:", e)
+            st.write(f"DEBUG ERROR Alpha Daily {symbol}:", e)
     return pd.DataFrame()
 
-# -------------------- Compute Movers from Watchlist --------------------
-def compute_watchlist_movers(watchlist):
-    movers = []
-    for symbol in watchlist:
-        df = fetch_alpha_intraday(symbol)
-        if not df.empty:
-            latest = df.iloc[-1]["4. close"]
-            prev = df.iloc[0]["4. close"]
-            change_pct = ((latest - prev) / prev) * 100
-            movers.append({"symbol": symbol, "latest": latest, "change_pct": change_pct})
-    movers_df = pd.DataFrame(movers)
-    if not movers_df.empty:
-        gainers = movers_df.sort_values("change_pct", ascending=False).head(5)
-        losers = movers_df.sort_values("change_pct", ascending=True).head(5)
-        return gainers, losers
-    return pd.DataFrame(), pd.DataFrame()
-
 # -------------------- Polygon News --------------------
-@st.cache_data(ttl=900)  # cache for 15 minutes
+@st.cache_data(ttl=900)
 def fetch_polygon_news():
     url = f"https://api.polygon.io/v2/reference/news?apiKey={POLYGON_API_KEY}"
     try:
         r = requests.get(url, timeout=10)
         if DEBUG_MODE:
             st.write("DEBUG Polygon News:", r.status_code)
-            st.json(r.json())
-        if r.status_code == 200 and "application/json" in r.headers.get("Content-Type", ""):
+        if r.status_code == 200:
             return r.json().get("results", [])
     except Exception as e:
         if DEBUG_MODE:
             st.write("DEBUG ERROR Polygon News:", e)
     return []
 
+# -------------------- Prediction Engine --------------------
+def score_stock(row):
+    score = 0
+    if row.get("price", 0) >= 3 and row.get("price", 0) <= 20:
+        score += 1
+    if row.get("change_percent", 0) >= 30:
+        score += 2
+    if row.get("volume", 0) > row.get("avg_volume", 0) * 5:
+        score += 2
+    if row.get("news_catalyst", False):
+        score += 2
+    return score
+
+def generate_predictions(movers_df, news_keywords):
+    movers_df["news_catalyst"] = movers_df["ticker"].apply(
+        lambda x: any(x in kw for kw in news_keywords)
+    )
+    movers_df["score"] = movers_df.apply(score_stock, axis=1)
+    return movers_df.sort_values("score", ascending=False).head(5)
+
 # -------------------- STREAMLIT UI --------------------
 def main():
-    st.set_page_config(page_title="Watchlist Market Scanner", layout="wide")
-
-    st.title("📈 Watchlist Market Scanner")
-    st.caption("Alpha Vantage intraday movers + Polygon news")
+    st.set_page_config(page_title="Snapshot Scanner", layout="wide")
+    st.title("📊 Snapshot Market Scanner")
+    st.caption("Previous day movers + trend charts + news catalysts + prediction engine")
 
     last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.markdown(f"**Last Updated:** {last_updated}")
 
-    tab_movers, tab_charts, tab_news = st.tabs(["📊 Watchlist Movers", "📈 Charts", "📰 News"])
+    tab_movers, tab_charts, tab_news, tab_predict = st.tabs(
+        ["📈 Snapshot Movers", "📉 Trend Charts", "📰 News", "🔮 Predictions"]
+    )
 
-    # Curated watchlist (customize here)
-    watchlist = ["AAPL", "MSFT", "TSLA", "AMZN", "NVDA"]
+    # Fetch snapshot movers
+    gainers = fetch_snapshot_movers("gainers")
+    losers = fetch_snapshot_movers("losers")
+    actives = fetch_snapshot_movers("actives")
 
     # Movers Tab
     with tab_movers:
-        st.header("Watchlist Movers")
-        gainers, losers = compute_watchlist_movers(watchlist)
-
+        st.header("Previous Day Movers")
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("🚀 Gainers")
-            if not gainers.empty:
-                st.dataframe(gainers, use_container_width=True)
-                st.bar_chart(gainers.set_index("symbol")["change_pct"])
-            else:
-                st.info("No gainers data available.")
-
+            st.dataframe(gainers[["ticker", "price", "change_percent", "volume"]], use_container_width=True)
         with col2:
             st.subheader("📉 Losers")
-            if not losers.empty:
-                st.dataframe(losers, use_container_width=True)
-                st.bar_chart(losers.set_index("symbol")["change_pct"])
-            else:
-                st.info("No losers data available.")
+            st.dataframe(losers[["ticker", "price", "change_percent", "volume"]], use_container_width=True)
+        st.subheader("🔥 Most Active")
+        st.dataframe(actives[["ticker", "price", "volume"]], use_container_width=True)
 
     # Charts Tab
     with tab_charts:
-        st.header("Intraday Chart for Selected Symbol")
-        symbol = st.text_input("Enter a ticker (e.g., AAPL, TSLA):", "AAPL")
-        ohlc = fetch_alpha_intraday(symbol)
-        if not ohlc.empty:
-            st.line_chart(ohlc["4. close"])
+        st.header("Trend Chart")
+        symbol = st.text_input("Enter a ticker to chart:", "AAPL")
+        df = fetch_alpha_daily(symbol)
+        if not df.empty:
+            st.line_chart(df["4. close"])
         else:
-            st.info(f"No intraday data available for {symbol}.")
+            st.info(f"No daily data available for {symbol}.")
 
     # News Tab
     with tab_news:
@@ -120,19 +131,22 @@ def main():
         if news:
             for article in news[:10]:
                 with st.expander(article.get("title", "News Item")):
-                    image_url = article.get("image_url")
-                    if image_url:
-                        st.image(image_url, width=200)
                     st.write(article.get("description", ""))
                     url = article.get("article_url")
                     if url:
                         st.markdown(f"[Read more]({url})")
         else:
-            st.info("No news available right now.")
+            st.info("No news available.")
+
+    # Prediction Tab
+    with tab_predict:
+        st.header("Prediction Engine")
+        news_keywords = [article.get("title", "") for article in fetch_polygon_news()]
+        scored = generate_predictions(gainers, news_keywords)
+        st.dataframe(scored[["ticker", "price", "change_percent", "volume", "score"]], use_container_width=True)
 
 if __name__ == "__main__":
     main()
-
 
 
 
