@@ -1,4 +1,4 @@
-# scanner.py
+# scanner_watchlist.py
 
 import requests
 import streamlit as st
@@ -7,41 +7,36 @@ from streamlit_autorefresh import st_autorefresh
 
 # -------------------- CONFIG --------------------
 BENZINGA_API_KEY = "bz.WTQQ73ASIU4DILGULR76RAWSOFSRU2XU"
-NEWS_API_KEY = "pub_08ee44a47dff4904afbb1f82899a98d7" 
+NEWS_API_KEY = "pub_08ee44a47dff4904afbb1f82899a98d7"  # optional fallback
+WATCHLIST = ["AAPL", "TSLA", "NVDA", "MSFT", "AMZN"]  # customize your tickers
 
-# -------------------- BENZINGA DATA FETCH --------------------
-def fetch_market_data():
-    """Fetch movers from Benzinga (top gainers, losers, volume leaders)."""
-    url = f"https://api.benzinga.com/api/v2.1/calendar/movers?token={BENZINGA_API_KEY}"
+# -------------------- BENZINGA QUOTES --------------------
+def fetch_quotes(tickers):
+    url = f"https://api.benzinga.com/api/v2.1/quotes?token={BENZINGA_API_KEY}&tickers={','.join(tickers)}"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
-            return response.json().get("movers", [])
+            return response.json().get("quotes", [])
         else:
-            print("Benzinga movers raw response:", response.text[:200])  # log first 200 chars
+            print("Quotes raw response:", response.text[:200])
     except Exception as e:
-        print("Error fetching Benzinga movers:", e)
-        return []
+        print("Error fetching quotes:", e)
     return []
 
+# -------------------- BENZINGA NEWS --------------------
 def fetch_benzinga_news():
-    """Fetch latest market news headlines from Benzinga safely."""
     url = f"https://api.benzinga.com/api/v2/news?token={BENZINGA_API_KEY}&limit=10"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
-            data = response.json()
-            if data:
-                return data
+            return response.json()
         else:
             print("Benzinga news raw response:", response.text[:200])
     except Exception as e:
         print("Error fetching Benzinga news:", e)
-        return []
     return []
 
 def fetch_news_fallback():
-    """Fallback to NewsAPI.org if Benzinga returns nothing or invalid JSON."""
     url = f"https://newsapi.org/v2/everything?q=stock%20market&apiKey={NEWS_API_KEY}&pageSize=10"
     try:
         response = requests.get(url, timeout=10)
@@ -51,90 +46,67 @@ def fetch_news_fallback():
             print("NewsAPI raw response:", response.text[:200])
     except Exception as e:
         print("Error fetching NewsAPI:", e)
-        return []
     return []
 
 # -------------------- FILTER ENGINE --------------------
-def filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max, float_max):
-    """Apply adjustable criteria to Benzinga movers."""
+def filter_quotes(quotes, change_thresh, price_min, price_max):
     filtered = []
-    for stock in movers:
-        symbol = stock.get("ticker")
-        price = float(stock.get("price", 0))
-        change_pct = float(stock.get("change_percent", 0))
-        volume = float(stock.get("volume", 0))
-        avg_volume = float(stock.get("avg_volume", 1))
-        float_shares = float(stock.get("float", 0))
+    for q in quotes:
+        symbol = q.get("symbol")
+        price = float(q.get("ask_price", 0))
+        change_pct = float(q.get("percent_change", 0))
+        volume = q.get("volume", 0)
 
-        volume_ratio = volume / avg_volume if avg_volume > 0 else 0
-
-        if (volume_ratio >= vol_ratio_thresh and
-            change_pct >= change_thresh and
-            price_min <= price <= price_max and
-            float_shares <= float_max):
+        if (change_pct >= change_thresh and
+            price_min <= price <= price_max):
             filtered.append({
                 "Symbol": symbol,
                 "Price": price,
                 "Change (%)": change_pct,
-                "Volume Ratio": round(volume_ratio, 2),
-                "Float": float_shares
+                "Volume": volume
             })
     return filtered
 
 # -------------------- STREAMLIT UI --------------------
 def plot_trend(symbol):
-    """Placeholder trend chart (Benzinga free tier doesn’t provide historical candles)."""
     plt.figure(figsize=(6, 3))
-    plt.plot([1, 2, 3, 4, 5], [10, 12, 15, 14, 18], marker="o", color="green")
+    plt.plot([1, 2, 3, 4, 5], [10, 12, 15, 14, 18], marker="o", color="blue")
     plt.title(f"{symbol} Trend Projection")
     plt.xlabel("Days")
     plt.ylabel("Price")
     st.pyplot(plt)
 
-def show_criteria():
-    st.markdown("### 📋 Scanner Criteria")
-    st.markdown("""
-    **Indicators of High Demand and Low Supply**
-    - Demand: Relative Volume threshold (adjustable)  
-    - Demand: % Change threshold (adjustable)  
-    - Demand: Price range (adjustable)  
-    - Supply: Float max (adjustable, now capped at 5M)  
-    """)
-
 def main():
-    st.set_page_config(page_title="Tadi's Benzinga Scanner", layout="wide")
+    st.set_page_config(page_title="Tadi's Watchlist Scanner", layout="wide")
 
     # Auto-refresh every 60 seconds
     st_autorefresh(interval=60000, limit=None, key="refresh")
 
-    st.title("📈 Tadi's Scanner — Full Market Edge")
-    st.subheader("Real-time Benzinga data with adjustable filters")
+    st.title("📈 Tadi's Watchlist Scanner")
+    st.subheader("Real-time Benzinga quotes + news")
 
     col1, col2, col3 = st.columns([1, 2, 1])
 
-    # Left: Criteria + Sliders
+    # Left: Filters
     with col1:
-        show_criteria()
         st.markdown("### 🔧 Adjust Filters")
-        vol_ratio_thresh = st.slider("Relative Volume (x)", 1, 10, 5)
-        change_thresh = st.slider("Daily % Change", 0, 100, 30)
-        price_min, price_max = st.slider("Price Range ($)", 1, 50, (3, 20))
-        float_max = st.slider("Max Float (shares)", 0, 5_000_000, 5_000_000, step=100_000)
+        change_thresh = st.slider("Daily % Change", 0, 100, 5)
+        price_min, price_max = st.slider("Price Range ($)", 1, 500, (1, 200))
 
-    # Middle: Filtered Stocks
+    # Middle: Filtered Watchlist
     with col2:
-        st.markdown("### 🚀 Stocks Meeting Criteria")
-        movers = fetch_market_data()
-        filtered = filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max, float_max)
+        st.markdown("### 🚀 Watchlist Movers")
+        quotes = fetch_quotes(WATCHLIST)
+        filtered = filter_quotes(quotes, change_thresh, price_min, price_max)
 
         if filtered:
             for stock in filtered:
                 st.markdown(f"#### {stock['Symbol']} — ${stock['Price']} ({stock['Change (%)']}%)")
-                st.write(f"📊 Volume Ratio: {stock['Volume Ratio']} | 🧮 Float: {stock['Float']:,}")
+                st.write(f"📊 Volume: {stock['Volume']}")
                 plot_trend(stock['Symbol'])
                 st.markdown("---")
         else:
-            st.warning("No stocks currently meet all criteria.")
+            st.warning("No watchlist stocks currently meet criteria.")
 
     # Right: Market News
     with col3:
@@ -155,5 +127,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
