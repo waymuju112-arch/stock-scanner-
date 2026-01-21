@@ -1,4 +1,4 @@
-# scanner_secure_fmp_intraday_news_debug.py
+# scanner_secure_fmp_v4_intraday_news_debug.py
 
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -8,19 +8,20 @@ from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 
 # -------------------- CONFIG --------------------
-FMP_API_KEY = st.secrets["FMP_API_KEY"]       # your new FMP key
+FMP_API_KEY = st.secrets["FMP_API_KEY"]       # your new FMP v4 key
 ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]   # still used for intraday OHLC
 POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
 DEBUG_MODE = st.secrets.get("ADMIN_DEBUG", False)
 
-# -------------------- FMP Movers --------------------
+# -------------------- FMP v4 Movers --------------------
 @st.cache_data(ttl=120)
 def fetch_fmp_movers(category="gainers"):
-    url = f"https://financialmodelingprep.com/api/v3/stock_market/{category}?apikey={FMP_API_KEY}"
+    url = f"https://financialmodelingprep.com/api/v4/stock_market/{category}?apikey={FMP_API_KEY}"
     try:
         r = requests.get(url, timeout=10)
         if DEBUG_MODE:
-            st.write(f"DEBUG FMP {category}:", r.status_code, r.text[:500])
+            st.write(f"DEBUG FMP {category} Status:", r.status_code)
+            st.json(r.json())  # show full JSON payload in debug mode
         if r.status_code == 200:
             return pd.DataFrame(r.json())
     except Exception as e:
@@ -39,7 +40,8 @@ def fetch_alpha_intraday(symbol):
     try:
         r = requests.get(url, timeout=10)
         if DEBUG_MODE:
-            st.write("DEBUG Alpha Intraday:", r.status_code, r.text[:500])
+            st.write("DEBUG Alpha Intraday:", r.status_code)
+            st.json(r.json())
         if r.status_code == 200:
             data = r.json().get("Time Series (5min)", {})
             if data:
@@ -59,7 +61,8 @@ def fetch_polygon_news():
     try:
         r = requests.get(url, timeout=10)
         if DEBUG_MODE:
-            st.write("DEBUG Polygon News:", r.status_code, r.text[:500])
+            st.write("DEBUG Polygon News:", r.status_code)
+            st.json(r.json())
         if r.status_code == 200 and "application/json" in r.headers.get("Content-Type", ""):
             return r.json().get("results", [])
     except Exception as e:
@@ -70,11 +73,11 @@ def fetch_polygon_news():
 
 # -------------------- STREAMLIT UI --------------------
 def main():
-    st.set_page_config(page_title="Tadi's Market Scanner (FMP + News)", layout="wide")
+    st.set_page_config(page_title="Tadi's Market Scanner (FMP v4)", layout="wide")
     st_autorefresh(interval=60000, limit=100, key="refresh")
 
     st.title("📈 Tadi's Market Scanner")
-    st.caption("Powered by FMP movers, Alpha Vantage intraday, and Polygon news")
+    st.caption("Powered by FMP v4 movers, Alpha Vantage intraday, and Polygon news")
 
     # Add timestamp
     last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -82,7 +85,7 @@ def main():
 
     tab_movers, tab_charts, tab_news = st.tabs(["📊 Market Movers", "📈 Charts", "📰 News"])
 
-    # Fetch data
+    # Fetch data from FMP v4
     gainers = fetch_fmp_movers("gainers")
     losers = fetch_fmp_movers("losers")
     actives = fetch_fmp_movers("actives")
@@ -96,7 +99,8 @@ def main():
             st.subheader("🚀 Gainers")
             if not gainers.empty:
                 st.dataframe(gainers, use_container_width=True)
-                st.bar_chart(gainers.set_index("symbol")["changesPercentage"].head(10))
+                if "changesPercentage" in gainers.columns:
+                    st.bar_chart(gainers.set_index("symbol")["changesPercentage"].head(10))
             else:
                 st.info("No gainers data available right now.")
 
@@ -104,7 +108,8 @@ def main():
             st.subheader("📉 Losers")
             if not losers.empty:
                 st.dataframe(losers, use_container_width=True)
-                st.bar_chart(losers.set_index("symbol")["changesPercentage"].head(10))
+                if "changesPercentage" in losers.columns:
+                    st.bar_chart(losers.set_index("symbol")["changesPercentage"].head(10))
             else:
                 st.info("No losers data available right now.")
 
@@ -147,6 +152,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
