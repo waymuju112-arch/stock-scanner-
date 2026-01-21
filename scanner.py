@@ -1,4 +1,4 @@
-# scanner_sp500_safe.py
+# scanner_sp500_classic.py
 
 import streamlit as st
 import pandas as pd
@@ -13,14 +13,8 @@ DEBUG_MODE = st.secrets.get("ADMIN_DEBUG", False)
 # -------------------- Load Universe from CSV --------------------
 @st.cache_data(ttl=86400)
 def load_sp500_universe():
-    try:
-        df = pd.read_csv("sp500.csv")
-        return df["Symbol"].dropna().unique().tolist()
-    except Exception as e:
-        st.warning("Failed to load sp500.csv, falling back to default list.")
-        if DEBUG_MODE:
-            st.write("DEBUG CSV ERROR:", e)
-        return ["AAPL","MSFT","TSLA","AMZN","NVDA"]
+    df = pd.read_csv("sp500.csv")
+    return df["Symbol"].dropna().unique().tolist()
 
 # -------------------- Alpha Vantage Daily OHLC --------------------
 @st.cache_data(ttl=1800)
@@ -119,12 +113,9 @@ def main():
     # Quick Metrics
     if not movers_df.empty:
         col1, col2, col3 = st.columns(3)
-        if not gainers.empty and "change_percent" in gainers.columns:
-            col1.metric("Top Gainer", gainers.iloc[0]["ticker"], f"{gainers.iloc[0]['change_percent']}%")
-        if not losers.empty and "change_percent" in losers.columns:
-            col2.metric("Top Loser", losers.iloc[0]["ticker"], f"{losers.iloc[0]['change_percent']}%")
-        if not actives.empty and "volume" in actives.columns:
-            col3.metric("Most Active", actives.iloc[0]["ticker"], f"{actives.iloc[0]['volume']:,}")
+        col1.metric("Top Gainer", gainers.iloc[0]["ticker"], f"{gainers.iloc[0]['change_percent']}%")
+        col2.metric("Top Loser", losers.iloc[0]["ticker"], f"{losers.iloc[0]['change_percent']}%")
+        col3.metric("Most Active", actives.iloc[0]["ticker"], f"{actives.iloc[0]['volume']:,}")
 
     # Tabs
     tab_movers, tab_charts, tab_news = st.tabs(["📈 Movers", "📉 Charts", "📰 News"])
@@ -134,24 +125,16 @@ def main():
         st.subheader("🚀 Gainers")
         if not gainers.empty and "change_percent" in gainers.columns:
             st.dataframe(gainers.style.background_gradient(subset=["change_percent"], cmap="Greens"))
-        elif not gainers.empty:
-            st.dataframe(gainers)
         else:
             st.info("No gainers available.")
-
         st.subheader("📉 Losers")
         if not losers.empty and "change_percent" in losers.columns:
             st.dataframe(losers.style.background_gradient(subset=["change_percent"], cmap="Reds"))
-        elif not losers.empty:
-            st.dataframe(losers)
         else:
             st.info("No losers available.")
-
         st.subheader("🔥 Most Active")
         if not actives.empty and "volume" in actives.columns:
             st.dataframe(actives.style.background_gradient(subset=["volume"], cmap="Blues"))
-        elif not actives.empty:
-            st.dataframe(actives)
         else:
             st.info("No active stocks available.")
 
@@ -190,6 +173,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
