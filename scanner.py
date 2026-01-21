@@ -6,32 +6,43 @@ import matplotlib.pyplot as plt
 from streamlit_autorefresh import st_autorefresh
 
 # -------------------- CONFIG --------------------
-BENZINGA_API_KEY = "bz.WTQQ73ASIU4DILGULR76RAWSOFSRU2XU"
-NEWS_API_KEY = "pub_08ee44a47dff4904afbb1f82899a98d7"  
+BENZINGA_API_KEY = "YOUR_BENZINGA_API_KEY"
+NEWS_API_KEY = "YOUR_NEWSAPI_KEY"  # from https://newsapi.org
 
 # -------------------- BENZINGA DATA FETCH --------------------
 def fetch_market_data():
     """Fetch movers from Benzinga (top gainers, losers, volume leaders)."""
     url = f"https://api.benzinga.com/api/v2.1/calendar/movers?token={BENZINGA_API_KEY}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        return response.json().get("movers", [])
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
+            return response.json().get("movers", [])
+    except Exception:
+        return []
     return []
 
 def fetch_benzinga_news():
-    """Fetch latest market news headlines from Benzinga."""
+    """Fetch latest market news headlines from Benzinga safely."""
     url = f"https://api.benzinga.com/api/v2/news?token={BENZINGA_API_KEY}&channels=markets&limit=10"
-    response = requests.get(url)
-    if response.status_code == 200 and response.json():
-        return response.json()
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
+            data = response.json()
+            if data:
+                return data
+    except Exception:
+        return []
     return []
 
 def fetch_news_fallback():
-    """Fallback to NewsAPI.org if Benzinga returns nothing."""
+    """Fallback to NewsAPI.org if Benzinga returns nothing or invalid JSON."""
     url = f"https://newsapi.org/v2/top-headlines?category=business&apiKey={NEWS_API_KEY}&pageSize=10"
-    response = requests.get(url)
-    if response.status_code == 200:
-        return response.json().get("articles", [])
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
+            return response.json().get("articles", [])
+    except Exception:
+        return []
     return []
 
 # -------------------- FILTER ENGINE --------------------
