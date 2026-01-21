@@ -1,4 +1,4 @@
-# scanner_secure_rapidapi_alpha_polygon_timestamp.py
+# scanner_secure_intraday_cache_debug.py
 
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -11,21 +11,28 @@ from datetime import datetime
 POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
 ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]
 RAPIDAPI_KEY = st.secrets["RAPIDAPI_KEY"]
+DEBUG_MODE = st.secrets.get("ADMIN_DEBUG", False)  # set ADMIN_DEBUG=true in secrets.toml if you want debug output
 
 # -------------------- POLYGON NEWS --------------------
-@st.cache_data(ttl=600)
+# News changes less frequently, so cache longer (15 minutes)
+@st.cache_data(ttl=900)
 def fetch_polygon_news():
     url = f"https://api.polygon.io/v2/reference/news?apiKey={POLYGON_API_KEY}"
     try:
         r = requests.get(url, timeout=10)
+        if DEBUG_MODE:
+            st.write("DEBUG Polygon:", r.status_code, r.text[:500])
         if r.status_code == 200 and "application/json" in r.headers.get("Content-Type", ""):
             return r.json().get("results", [])
     except Exception as e:
+        if DEBUG_MODE:
+            st.write("DEBUG ERROR Polygon:", e)
         st.warning("Polygon news fetch failed.")
     return []
 
 # -------------------- Yahoo Finance via RapidAPI --------------------
-@st.cache_data(ttl=300)
+# Movers change quickly, so cache shorter (2 minutes)
+@st.cache_data(ttl=120)
 def fetch_yahoo_movers(category="gainers", limit=100):
     url = f"https://yahoo-finance15.p.rapidapi.com/api/yahoo/market/{category}"
     headers = {
@@ -34,28 +41,40 @@ def fetch_yahoo_movers(category="gainers", limit=100):
     }
     try:
         r = requests.get(url, headers=headers, timeout=10)
+        if DEBUG_MODE:
+            st.write(f"DEBUG Yahoo {category}:", r.status_code, r.text[:500])
         if r.status_code == 200:
             data = r.json()
             df = pd.DataFrame(data.get("quotes", []))
             return df.head(limit)
     except Exception as e:
+        if DEBUG_MODE:
+            st.write(f"DEBUG ERROR Yahoo {category}:", e)
         st.warning(f"Yahoo {category} fetch failed.")
     return pd.DataFrame()
 
-# -------------------- Alpha Vantage OHLC --------------------
-@st.cache_data(ttl=600)
-def fetch_alpha_daily(symbol):
-    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={ALPHA_API_KEY}"
+# -------------------- Alpha Vantage Intraday (5min) --------------------
+# Intraday prices update constantly, but quota is tight → cache 5 minutes
+@st.cache_data(ttl=300)
+def fetch_alpha_intraday(symbol):
+    url = (
+        f"https://www.alphavantage.co/query?"
+        f"function=TIME_SERIES_INTRADAY&symbol={symbol}&interval=5min&apikey={ALPHA_API_KEY}&outputsize=compact"
+    )
     try:
         r = requests.get(url, timeout=10)
+        if DEBUG_MODE:
+            st.write("DEBUG Alpha Intraday:", r.status_code, r.text[:500])
         if r.status_code == 200:
-            data = r.json().get("Time Series (Daily)", {})
+            data = r.json().get("Time Series (5min)", {})
             if data:
                 df = pd.DataFrame.from_dict(data, orient="index").astype(float)
                 df.index = pd.to_datetime(df.index)
                 return df.sort_index()
     except Exception as e:
-        st.warning(f"Alpha Vantage data fetch failed for {symbol}.")
+        if DEBUG_MODE:
+            st.write("DEBUG ERROR Alpha Intraday:", e)
+        st.warning(f"Alpha Vantage intraday fetch failed for {symbol}.")
     return pd.DataFrame()
 
 # -------------------- SCORING ENGINE --------------------
@@ -88,7 +107,7 @@ def main():
     st_autorefresh(interval=60000, limit=100, key="refresh")
 
     st.title("📈 Tadi's Market Scanner")
-    st.caption("Secured and optimized with caching, secrets, and quota protection")
+    st.caption("Secured and optimized with caching, secrets, quota protection, and intraday charts")
 
     # Add timestamp
     last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -157,15 +176,15 @@ def main():
                 ax2.set_ylabel("% Change")
                 st.pyplot(fig2)
 
-            # Example OHLC chart for top gainer
+            # Example OHLC chart for top gainer (intraday)
             if not gainers_df.empty:
                 top_symbol = gainers_df.iloc[0]["Symbol"]
-                st.subheader(f"📈 OHLC Chart for {top_symbol}")
-                ohlc = fetch_alpha_daily(top_symbol)
+                st.subheader(f"📈 Intraday (5min) Chart for {top_symbol}")
+                ohlc = fetch_alpha_intraday(top_symbol)
                 if not ohlc.empty:
                     st.line_chart(ohlc["4. close"])
                 else:
-                    st.info(f"No OHLC data available for {top_symbol}.")
+                    st.info(f"No intraday data available for {top_symbol}.")
         else:
             st.info("No chart data available right now.")
 
@@ -188,8 +207,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
 
 
 
