@@ -1,4 +1,4 @@
-# scanner_forex_fixed.py
+# scanner_forex_final.py
 
 import streamlit as st
 import pandas as pd
@@ -95,7 +95,6 @@ def compute_fx_movers(universe):
 # -------------------- Forex News via FXStreet RSS --------------------
 @st.cache_data(ttl=900)
 def fetch_forex_news():
-    # FXStreet RSS feed for forex headlines
     feed_url = "https://www.fxstreet.com/rss/news"
     try:
         feed = feedparser.parse(feed_url)
@@ -104,7 +103,8 @@ def fetch_forex_news():
             articles.append({
                 "title": entry.title,
                 "summary": entry.summary,
-                "link": entry.link
+                "link": entry.link,
+                "image": entry.get("media_content", [{}])[0].get("url", None)  # thumbnail if available
             })
         return articles
     except Exception as e:
@@ -168,26 +168,22 @@ def main():
             st.info(f"No intraday data for {pair}.")
 
     # News Tab
-   # News Tab
-with tab_news:
-    st.subheader("Latest Forex News")
-    news = fetch_forex_news()
-    if news:
-        for article in news[:8]:
-            st.markdown("---")
-            col1, col2 = st.columns([1,3])
-            with col1:
-                # Thumbnail on the left
-                if "image" in article and article["image"]:
-                    st.image(article["image"], use_container_width=True)
-            with col2:
-                # Bold header above preview
-                st.markdown(f"**{article['title']}**")
-                st.write(article['summary'])
-                st.markdown(f"[🔗 Read more]({article['link']})")
-    else:
-        st.info("No forex news available.")
-
+    with tab_news:
+        st.subheader("Latest Forex News")
+        news = fetch_forex_news()
+        if news:
+            for article in news[:8]:
+                st.markdown("---")
+                col1, col2 = st.columns([1,3])
+                with col1:
+                    if article["image"]:
+                        st.image(article["image"], use_container_width=True)
+                with col2:
+                    st.markdown(f"**{article['title']}**")
+                    st.write(article['summary'])
+                    st.markdown(f"[🔗 Read more]({article['link']})")
+        else:
+            st.info("No forex news available.")
 
 if __name__ == "__main__":
     main()
