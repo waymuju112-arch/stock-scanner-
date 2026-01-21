@@ -6,31 +6,30 @@ from yfinance.exceptions import YFRateLimitError
 import requests
 import streamlit as st
 import matplotlib.pyplot as plt
-import smtplib
-from email.mime.text import MIMEText
 
 # -------------------- CONFIG --------------------
-NEWS_API_KEY = 'YOUR_NEWSAPI_KEY'   # get one free at https://newsapi.org
-EMAIL_ADDRESS = 'your_email@gmail.com'
-EMAIL_PASSWORD = 'YOUR_APP_PASSWORD'
-RECIPIENT_EMAIL = 'recipient_email@gmail.com'
+NEWS_API_KEY = 'YOUR_NEWSAPI_KEY'  # Get one free at https://newsapi.org
 
-# ✅ Reduced ticker list to avoid rate limits
-TICKERS = ['AAPL', 'MSFT', 'TSLA', 'NVDA', 'AMD']
+# ✅ Expanded ticker list (12 symbols)
+TICKERS = [
+    'AAPL', 'MSFT', 'TSLA', 'NVDA', 'AMD',
+    'GOOGL', 'AMZN', 'META', 'NFLX', 'BAC',
+    'JPM', 'XOM'
+]
 
 # -------------------- SAFE HISTORY WRAPPER --------------------
 def safe_history(symbol, period="7d", retries=3, delay=5):
-    """Fetch stock history with retry logic to handle YFRateLimitError."""
     for attempt in range(retries):
         try:
             return yf.Ticker(symbol).history(period=period)
         except YFRateLimitError:
             if attempt < retries - 1:
-                time.sleep(delay)  # wait before retry
+                time.sleep(delay)
             else:
                 return None
 
 # -------------------- SCANNER LOGIC --------------------
+@st.cache_data(ttl=300)
 def scan_stocks(tickers):
     results = []
     for symbol in tickers:
@@ -60,7 +59,7 @@ def scan_stocks(tickers):
         })
     return results
 
-# -------------------- NEWS FETCH VIA REQUESTS --------------------
+# -------------------- NEWS FETCH --------------------
 def get_news(symbol):
     url = f"https://newsapi.org/v2/everything?q={symbol}&language=en&sortBy=publishedAt&apiKey={NEWS_API_KEY}"
     try:
@@ -84,24 +83,6 @@ def filter_criteria(stock_data):
             filtered.append(stock)
     return filtered
 
-# -------------------- EMAIL DELIVERY --------------------
-def send_email(filtered_stocks):
-    body = "Tadi's Scanner Results:\n\n"
-    for stock in filtered_stocks:
-        body += f"{stock['Symbol']} | Price: ${stock['Price']} | Change: {stock['Change (%)']}% | Vol Ratio: {stock['Volume Ratio']} | Float: {stock['Float (M)']}M\n"
-        for headline in stock['News']:
-            body += f"  - {headline}\n"
-        body += "\n"
-
-    msg = MIMEText(body)
-    msg['Subject'] = 'Tadi’s Daily Scanner Results'
-    msg['From'] = EMAIL_ADDRESS
-    msg['To'] = RECIPIENT_EMAIL
-
-    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-        server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-        server.send_message(msg)
-
 # -------------------- STREAMLIT UI --------------------
 def plot_trend(history, symbol):
     plt.figure(figsize=(6, 3))
@@ -110,6 +91,17 @@ def plot_trend(history, symbol):
     plt.xlabel('Date')
     plt.ylabel('Close Price')
     st.pyplot(plt)
+
+def show_criteria():
+    st.markdown("### 📋 Scanner Criteria")
+    st.markdown("""
+    **Indicators of High Demand and Low Supply**
+    - ✅ Demand: 5x Relative Volume (5x Above Average Volume today)  
+    - ✅ Demand: Already up 30% on the day  
+    - ✅ Demand: There is a News Event moving the stock higher  
+    - ✅ Demand: Price Between $3.00 - $20.00  
+    - ✅ Supply: Less than 5 million shares available to trade  
+    """)
 
 def main():
     st.set_page_config(page_title="Tadi's Scanner", layout="wide")
@@ -126,29 +118,34 @@ def main():
         """, unsafe_allow_html=True
     )
 
-    st.title("📈 Tadi's Scanner — Market Momentum Dashboard")
-    st.subheader("Identifying High Demand, Low Supply Stocks")
+    st.title("📈 Tadi's Scanner — Real-Time Market Dashboard")
+    st.subheader("Live momentum vs. scanner criteria")
 
-    with st.spinner("Scanning market..."):
-        scanned = scan_stocks(TICKERS)
-        filtered = filter_criteria(scanned)
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        show_criteria()
 
-    if filtered:
-        for stock in filtered:
-            st.markdown(f"### {stock['Symbol']} — ${stock['Price']} ({stock['Change (%)']}%)")
-            st.write(f"📊 Volume Ratio: {stock['Volume Ratio']} | 🧮 Float: {stock['Float (M)']}M")
-            st.write("📰 News Headlines:")
-            for headline in stock['News']:
-                st.write(f"- {headline}")
-            plot_trend(stock['History'], stock['Symbol'])
-            st.markdown("---")
-        send_email(filtered)
-        st.success("Email sent with scanner results!")
-    else:
-        st.warning("No stocks met all criteria today.")
+    with col2:
+        with st.spinner("Scanning market..."):
+            scanned = scan_stocks(TICKERS)
+            filtered = filter_criteria(scanned)
+
+        if filtered:
+            for stock in filtered:
+                st.markdown(f"### {stock['Symbol']} — ${stock['Price']} ({stock['Change (%)']}%)")
+                st.write(f"📊 Volume Ratio: {stock['Volume Ratio']} | 🧮 Float: {stock['Float (M)']}M")
+                st.write("📰 News Headlines:")
+                for headline in stock['News']:
+                    st.write(f"- {headline}")
+                plot_trend(stock['History'], stock['Symbol'])
+                st.markdown("---")
+        else:
+            st.warning("No stocks met all criteria right now.")
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
