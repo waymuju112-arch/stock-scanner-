@@ -1,4 +1,4 @@
-# scanner_flexible_match.py
+# scanner_polygon_finnhub_enriched.py
 
 import requests
 import streamlit as st
@@ -9,6 +9,7 @@ from streamlit_autorefresh import st_autorefresh
 # -------------------- CONFIG --------------------
 POLYGON_API_KEY = "aZTfdpYgZ0kIAVwdILxPygSHdZ0CrDBu"
 FINNHUB_API_KEY = "d5o3171r01qma2b78u4gd5o3171r01qma2b78u50"
+
 
 # -------------------- POLYGON MOVERS --------------------
 def fetch_polygon_movers():
@@ -21,16 +22,16 @@ def fetch_polygon_movers():
         print("Error fetching Polygon movers:", e)
     return []
 
-# -------------------- FINNHUB NEWS --------------------
-def fetch_finnhub_news():
-    url = f"https://finnhub.io/api/v1/news?category=general&token={FINNHUB_API_KEY}"
+# -------------------- FINNHUB PROFILE --------------------
+def fetch_finnhub_profile(symbol):
+    url = f"https://finnhub.io/api/v1/stock/profile2?symbol={symbol}&token={FINNHUB_API_KEY}"
     try:
         response = requests.get(url, timeout=10)
-        if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
+        if response.status_code == 200:
             return response.json()
     except Exception as e:
-        print("Error fetching Finnhub news:", e)
-    return []
+        print(f"Error fetching Finnhub profile for {symbol}:", e)
+    return {}
 
 # -------------------- SCORING ENGINE --------------------
 def score_stocks(movers, vol_thresh, change_thresh, price_min, price_max, float_max):
@@ -41,7 +42,10 @@ def score_stocks(movers, vol_thresh, change_thresh, price_min, price_max, float_
         change_pct = float(stock.get("todaysChangePerc", 0))
         volume = float(stock.get("day", {}).get("v", 0))
         prev_volume = float(stock.get("prevDay", {}).get("v", 1))
-        float_shares = float(stock.get("sharesOutstanding", 0))
+
+        # Enrich float data from Finnhub
+        profile = fetch_finnhub_profile(symbol)
+        float_shares = float(profile.get("shareOutstanding", 0))
 
         volume_ratio = volume / prev_volume if prev_volume > 0 else 0
 
@@ -78,7 +82,7 @@ def main():
     st_autorefresh(interval=60000, limit=None, key="refresh")
 
     st.title("📈 Tadi's Market Scanner")
-    st.caption("Powered by Polygon.io (movers) and Finnhub.io (news)")
+    st.caption("Powered by Polygon.io (movers) + Finnhub.io (float & fundamentals)")
 
     tab_filters, tab_stocks, tab_analytics, tab_news = st.tabs(["⚙️ Filters", "🚀 Stocks", "📊 Analytics", "📰 News"])
 
@@ -132,5 +136,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 
 
