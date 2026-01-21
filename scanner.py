@@ -1,21 +1,26 @@
-# scanner_forex.py
+# scanner_forex_fixed.py
 
 import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime
+import feedparser   # for forex RSS feeds
 
 # -------------------- CONFIG --------------------
 ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]
-POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
 DEBUG_MODE = st.secrets.get("ADMIN_DEBUG", False)
 
 # -------------------- Load Forex Universe --------------------
 @st.cache_data(ttl=86400)
 def load_forex_universe():
-    # Example CSV: forex_pairs.csv with column "Pair" like EURUSD, GBPUSD, USDJPY
-    df = pd.read_csv("forex_pairs.csv")
-    return df["Pair"].dropna().unique().tolist()
+    try:
+        df = pd.read_csv("forex_pairs.csv")
+        return df["Pair"].dropna().unique().tolist()
+    except FileNotFoundError:
+        # fallback list
+        return ["EURUSD","GBPUSD","USDJPY","AUDUSD","USDCAD","USDCHF","NZDUSD","USDZAR",
+                "EURJPY","EURGBP","EURAUD","AUDJPY","GBPJPY","CHFJPY","EURCAD","GBPCAD",
+                "AUDNZD","USDTRY","USDMXN"]
 
 # -------------------- Alpha Vantage FX Daily --------------------
 @st.cache_data(ttl=1800)
@@ -80,23 +85,31 @@ def compute_fx_movers(universe):
         progress.progress((i+1)/len(universe))
     movers_df = pd.DataFrame(movers)
     if not movers_df.empty:
+        movers_df["abs_change"] = movers_df["change_percent"].abs()
         gainers = movers_df.sort_values("change_percent", ascending=False).head(5)
         losers = movers_df.sort_values("change_percent", ascending=True).head(5)
-        actives = movers_df.sort_values("price", ascending=False).head(5)  # proxy: highest price pairs
+        actives = movers_df.sort_values("abs_change", ascending=False).head(5)
         return gainers, losers, actives, movers_df
     return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-# -------------------- Polygon News --------------------
+# -------------------- Forex News via FXStreet RSS --------------------
 @st.cache_data(ttl=900)
-def fetch_polygon_news():
-    url = f"https://api.polygon.io/v2/reference/news?apiKey={POLYGON_API_KEY}"
+def fetch_forex_news():
+    # FXStreet RSS feed for forex headlines
+    feed_url = "https://www.fxstreet.com/rss/news"
     try:
-        r = requests.get(url, timeout=10)
-        if r.status_code == 200:
-            return r.json().get("results", [])
+        feed = feedparser.parse(feed_url)
+        articles = []
+        for entry in feed.entries[:15]:
+            articles.append({
+                "title": entry.title,
+                "summary": entry.summary,
+                "link": entry.link
+            })
+        return articles
     except Exception as e:
         if DEBUG_MODE:
-            st.write("DEBUG ERROR Polygon News:", e)
+            st.write("DEBUG ERROR Forex News:", e)
     return []
 
 # -------------------- STREAMLIT UI --------------------
@@ -119,7 +132,7 @@ def main():
         if not losers.empty:
             col2.metric("Top Loser", losers.iloc[0]["pair"], f"{losers.iloc[0]['change_percent']}%")
         if not actives.empty:
-            col3.metric("Highest Price", actives.iloc[0]["pair"], f"{actives.iloc[0]['price']}")
+            col3.metric("Most Active", actives.iloc[0]["pair"], f"{actives.iloc[0]['change_percent']}%")
 
     # Tabs
     tab_movers, tab_charts, tab_news = st.tabs(["📈 Movers", "📉 Charts", "📰 News"])
@@ -136,9 +149,9 @@ def main():
             st.dataframe(losers.style.background_gradient(subset=["change_percent"], cmap="Reds"))
         else:
             st.info("No losers available.")
-        st.subheader("💲 Highest Price Pairs")
-        if not actives.empty and "price" in actives.columns:
-            st.dataframe(actives.style.background_gradient(subset=["price"], cmap="Blues"))
+        st.subheader("🔥 Most Active (Highest Volatility)")
+        if not actives.empty and "change_percent" in actives.columns:
+            st.dataframe(actives.style.background_gradient(subset=["change_percent"], cmap="Blues"))
         else:
             st.info("No active pairs available.")
 
@@ -156,27 +169,21 @@ def main():
 
     # News Tab
     with tab_news:
-        st.subheader("Latest Market News")
-        news = fetch_polygon_news()
+        st.subheader("Latest Forex News")
+        news = fetch_forex_news()
         if news:
             for article in news[:8]:
                 st.markdown("---")
-                col1, col2 = st.columns([1,3])
-                with col1:
-                    image_url = article.get("image_url")
-                    if image_url:
-                        st.image(image_url, use_container_width=True)
-                with col2:
-                    st.markdown(f"### {article.get('title','News Item')}")
-                    st.write(article.get("description",""))
-                    url = article.get("article_url")
-                    if url:
-                        st.markdown(f"[🔗 Read more]({url})")
+                st.markdown(f"### {article['title']}")
+                st.write(article['summary'])
+                st.markdown(f"[🔗 Read more]({article['link']})")
         else:
-            st.info("No news available.")
+            st.info("No forex news available.")
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
