@@ -3,13 +3,21 @@ import streamlit as st
 import os
 import smtplib
 from email.mime.text import MIMEText
+from dotenv import load_dotenv
+from streamlit_autorefresh import st_autorefresh
 
-# --- CONFIG ---
-API_KEY    = st.secrets["ALPHAVANTAGE_KEY"]
-EMAIL_USER = st.secrets["EMAIL_USER"]
-EMAIL_PASS = st.secrets["EMAIL_PASS"]
-EMAIL_TO   = st.secrets["EMAIL_TO"]
-
+# --- LOAD ENV OR SECRETS ---
+if st.secrets:  # running on Streamlit Cloud
+    API_KEY    = st.secrets["ALPHAVANTAGE_KEY"]
+    EMAIL_USER = st.secrets["EMAIL_USER"]
+    EMAIL_PASS = st.secrets["EMAIL_PASS"]
+    EMAIL_TO   = st.secrets["EMAIL_TO"]
+else:  # running locally
+    load_dotenv()
+    API_KEY    = os.getenv("ALPHAVANTAGE_KEY")
+    EMAIL_USER = os.getenv("EMAIL_USER")
+    EMAIL_PASS = os.getenv("EMAIL_PASS")
+    EMAIL_TO   = os.getenv("EMAIL_TO")
 
 # --- EMAIL ALERT FUNCTION ---
 def send_email_alert(subject, body, to_email):
@@ -30,11 +38,14 @@ def get_forex_data(from_symbol, to_symbol):
     url = f"https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency={from_symbol}&to_currency={to_symbol}&apikey={API_KEY}"
     response = requests.get(url)
     if response.status_code == 200:
-        return response.json()["Realtime Currency Exchange Rate"]
+        return response.json().get("Realtime Currency Exchange Rate", {})
     return None
 
 # --- STREAMLIT UI ---
 st.title("💱 Multi-Pair Forex Scanner with Alerts")
+
+# Auto-refresh every 5 minutes
+st_autorefresh(interval=300000, limit=None, key="refresh")
 
 pairs = ["USD/ZAR", "EUR/USD", "GBP/JPY", "USD/JPY"]  # core watchlist
 thresholds = {
@@ -49,7 +60,7 @@ for pair in pairs:
     base, quote = pair.split("/")
     fx_data = get_forex_data(base, quote)
     if fx_data:
-        rate = float(fx_data["5. Exchange Rate"])
+        rate = float(fx_data.get("5. Exchange Rate", 0))
         results.append({"Pair": pair, "Rate": rate})
 
         # Display metric
@@ -67,7 +78,6 @@ for pair in pairs:
 if results:
     st.subheader("Scanner Results")
     st.dataframe(results)
-
 
 
 
