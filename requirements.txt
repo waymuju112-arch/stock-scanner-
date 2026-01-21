@@ -1,7 +1,9 @@
-yfinance
 streamlit
+requests
 matplotlib
-newsapi-python
+streamlit-autorefresh
+
+
 
 
 
