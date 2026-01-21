@@ -1,6 +1,9 @@
+yfinance
 streamlit
-requests
-python-dotenv
+matplotlib
+newsapi-python
+
+
 
 
 
