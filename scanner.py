@@ -8,8 +8,8 @@ from yahoo_fin import stock_info as si
 from streamlit_autorefresh import st_autorefresh
 
 # -------------------- CONFIG --------------------
-POLYGON_API_KEY = "YOUR_POLYGON_KEY"
-ALPHA_API_KEY = "YOUR_ALPHA_KEY"   # <-- Add your Alpha Vantage key here
+POLYGON_API_KEY = "aZTfdpYgZ0kIAVwdILxPygSHdZ0CrDBu"
+ALPHA_API_KEY = "HV1L0BLBFPRE2FYQ"
 
 # -------------------- POLYGON NEWS --------------------
 def fetch_polygon_news():
