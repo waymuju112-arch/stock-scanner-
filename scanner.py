@@ -1,4 +1,4 @@
-# scanner_sp500_sidebar.py
+# scanner_sp500_sidebar_safe.py
 
 import streamlit as st
 import pandas as pd
@@ -109,7 +109,9 @@ def score_stock(row, news_keywords):
 
 def generate_predictions(movers_df, news_keywords):
     if movers_df.empty:
-        return pd.DataFrame()
+        # Always return consistent columns
+        return pd.DataFrame(columns=["ticker","price","change_percent","volume","relative_volume","score"])
+    movers_df = movers_df.copy()
     movers_df["score"] = movers_df.apply(lambda r: score_stock(r, news_keywords), axis=1)
     return movers_df.sort_values("score", ascending=False).head(10)
 
@@ -159,7 +161,10 @@ def main():
     # Movers Tab
     with tab_movers:
         st.subheader("Filtered Market Movers")
-        st.dataframe(filtered.style.background_gradient(subset=["change_percent"], cmap="RdYlGn"))
+        if not filtered.empty:
+            st.dataframe(filtered.style.background_gradient(subset=["change_percent"], cmap="RdYlGn"))
+        else:
+            st.info("No movers match your current filter criteria.")
 
     # Charts Tab
     with tab_charts:
@@ -195,11 +200,13 @@ def main():
         st.subheader("Prediction Engine")
         news_keywords = [article.get("title", "") for article in fetch_polygon_news()]
         scored = generate_predictions(filtered, news_keywords)
-        st.dataframe(scored.style.background_gradient(subset=["score"], cmap="Blues"))
+        if not scored.empty and "score" in scored.columns:
+            st.dataframe(scored.style.background_gradient(subset=["score"], cmap="Blues"))
+        else:
+            st.info("No predictions available with current filters.")
 
 if __name__ == "__main__":
     main()
-
 
 
 
