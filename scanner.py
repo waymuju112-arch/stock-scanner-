@@ -1,4 +1,4 @@
-# scanner_polygon_finnhub_float.py
+# scanner_ui_refactor_emojis.py
 
 import requests
 import streamlit as st
@@ -39,7 +39,7 @@ def fetch_finnhub_news():
 
 # -------------------- FILTER ENGINE --------------------
 def filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max, float_max):
-    """Apply Warrior Trading-style filters to Polygon movers."""
+    """Apply filters to Polygon movers."""
     filtered = []
     for stock in movers:
         symbol = stock.get("ticker")
@@ -47,7 +47,7 @@ def filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max,
         change_pct = float(stock.get("todaysChangePerc", 0))
         volume = float(stock.get("day", {}).get("v", 0))
         prev_volume = float(stock.get("prevDay", {}).get("v", 1))
-        float_shares = float(stock.get("sharesOutstanding", 0))  # supply/float
+        float_shares = float(stock.get("sharesOutstanding", 0))
 
         volume_ratio = volume / prev_volume if prev_volume > 0 else 0
 
@@ -69,73 +69,64 @@ def filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max,
 def plot_trend(symbol):
     """Placeholder trend chart."""
     plt.figure(figsize=(6, 3))
-    plt.plot([1, 2, 3, 4, 5], [10, 12, 15, 14, 18], marker="o", color="green")
+    plt.plot([1, 2, 3, 4, 5], [10, 12, 15, 14, 18], marker="o", color="blue")
     plt.title(f"{symbol} Trend Projection")
     plt.xlabel("Days")
     plt.ylabel("Price")
     st.pyplot(plt)
 
-def show_criteria():
-    st.markdown("### 📋 Scanner Criteria")
-    st.markdown("""
-    **Indicators of High Demand and Low Supply**
-    - Relative Volume threshold (adjustable)  
-    - % Change threshold (adjustable)  
-    - Price range (adjustable)  
-    - Supply: Float max (adjustable, capped at 5M)  
-    """)
-
 def main():
-    st.set_page_config(page_title="Tadi's Polygon/Finnhub Scanner", layout="wide")
+    st.set_page_config(page_title="Tadi's Market Scanner", layout="wide")
 
     # Auto-refresh every 60 seconds
     st_autorefresh(interval=60000, limit=None, key="refresh")
 
-    st.title("📈 Tadi's Scanner — Polygon Movers + Finnhub News")
-    st.subheader("Real-time market data")
+    st.title("📈 Tadi's Market Scanner")
+    st.caption("Powered by Polygon.io (movers) and Finnhub.io (news)")
 
-    col1, col2, col3 = st.columns([1, 2, 1])
+    # Tabs for cleaner navigation
+    tab_filters, tab_stocks, tab_news = st.tabs(["⚙️ Filters", "🚀 Stocks", "📰 News"])
 
-    # Left: Filters
-    with col1:
-        show_criteria()
-        st.markdown("### 🔧 Adjust Filters")
+    # Filters Tab
+    with tab_filters:
+        st.header("Adjust Scanner Criteria")
         vol_ratio_thresh = st.slider("Relative Volume (x)", 1, 10, 3)
         change_thresh = st.slider("Daily % Change", 0, 100, 10)
         price_min, price_max = st.slider("Price Range ($)", 1, 500, (1, 50))
         float_max = st.slider("Max Float (shares)", 0, 5_000_000, 5_000_000, step=100_000)
 
-    # Middle: Filtered Stocks
-    with col2:
-        st.markdown("### 🚀 Stocks Meeting Criteria")
+    # Stocks Tab
+    with tab_stocks:
+        st.header("Stocks Meeting Criteria")
         movers = fetch_polygon_movers()
         filtered = filter_stocks(movers, vol_ratio_thresh, change_thresh, price_min, price_max, float_max)
 
         if filtered:
+            st.markdown(f"**{len(filtered)} stocks currently meet your criteria.**")
             for stock in filtered:
-                st.markdown(f"#### {stock['Symbol']} — ${stock['Price']} ({stock['Change (%)']}%)")
-                st.write(f"📊 Volume Ratio: {stock['Volume Ratio']} | Volume: {stock['Volume']:,} | Float: {stock['Float']:,}")
-                plot_trend(stock['Symbol'])
-                st.markdown("---")
+                with st.container():
+                    st.subheader(f"{stock['Symbol']} — ${stock['Price']} ({stock['Change (%)']}%)")
+                    st.write(f"📊 Volume Ratio: {stock['Volume Ratio']} | Volume: {stock['Volume']:,} | Float: {stock['Float']:,}")
+                    plot_trend(stock['Symbol'])
+                    st.divider()
         else:
-            st.warning("No stocks currently meet all criteria.")
+            st.info("No stocks currently meet the criteria.")
 
-    # Right: Market News
-    with col3:
-        st.markdown("### 📰 Latest Market News")
+    # News Tab
+    with tab_news:
+        st.header("Latest Market News")
         news = fetch_finnhub_news()
 
         if news:
             for article in news[:10]:
-                title = article.get("headline") or article.get("summary")
-                url = article.get("url")
-                st.write(f"**{title}**")
-                if url:
-                    st.caption(url)
+                with st.expander(article.get("headline", "News Item")):
+                    st.write(article.get("summary", ""))
+                    url = article.get("url")
+                    if url:
+                        st.markdown(f"[Read more]({url})")
         else:
             st.info("No news available right now.")
 
 if __name__ == "__main__":
     main()
-
 
