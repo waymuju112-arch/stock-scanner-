@@ -1,4 +1,4 @@
-# scanner_finnhub_alpha_polygon_news.py
+# scanner_secure_rapidapi_alpha_polygon.py
 
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -7,11 +7,12 @@ import requests
 from streamlit_autorefresh import st_autorefresh
 
 # -------------------- CONFIG --------------------
-POLYGON_API_KEY = "aZTfdpYgZ0kIAVwdILxPygSHdZ0CrDBu"
-ALPHA_API_KEY = "HV1L0BLBFPRE2FYQ"
-FINNHUB_API_KEY = "d5o3171r01qma2b78u4gd5o3171r01qma2b78u50"
+POLYGON_API_KEY = st.secrets["aZTfdpYgZ0kIAVwdILxPygSHdZ0CrDBu"]
+ALPHA_API_KEY = st.secrets["HV1L0BLBFPRE2FYQ"]
+RAPIDAPI_KEY = st.secrets["cd27946ademsh76a9f1fb077b8d4p1613f0jsnce25c6a2cb31"]
 
 # -------------------- POLYGON NEWS --------------------
+@st.cache_data(ttl=600)
 def fetch_polygon_news():
     url = f"https://api.polygon.io/v2/reference/news?apiKey={POLYGON_API_KEY}"
     try:
@@ -19,25 +20,29 @@ def fetch_polygon_news():
         if r.status_code == 200 and "application/json" in r.headers.get("Content-Type", ""):
             return r.json().get("results", [])
     except Exception as e:
-        print("Error fetching Polygon news:", e)
+        st.warning("Polygon news fetch failed.")
     return []
 
-# -------------------- FINNHUB MOVERS --------------------
-def fetch_finnhub_movers():
-    url = f"https://finnhub.io/api/v1/stock/market-movers?token={FINNHUB_API_KEY}"
+# -------------------- Yahoo Finance via RapidAPI --------------------
+@st.cache_data(ttl=300)
+def fetch_yahoo_movers(category="gainers", limit=100):
+    url = f"https://yahoo-finance15.p.rapidapi.com/api/yahoo/market/{category}"
+    headers = {
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": "yahoo-finance15.p.rapidapi.com"
+    }
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
             data = r.json()
-            gainers = pd.DataFrame(data.get("gainers", []))
-            losers = pd.DataFrame(data.get("losers", []))
-            active = pd.DataFrame(data.get("mostActive", []))
-            return gainers, losers, active
+            df = pd.DataFrame(data.get("quotes", []))
+            return df.head(limit)
     except Exception as e:
-        print("Error fetching Finnhub movers:", e)
-    return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        st.warning(f"Yahoo {category} fetch failed.")
+    return pd.DataFrame()
 
-# -------------------- ALPHA VANTAGE OHLC --------------------
+# -------------------- Alpha Vantage OHLC --------------------
+@st.cache_data(ttl=600)
 def fetch_alpha_daily(symbol):
     url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={ALPHA_API_KEY}"
     try:
@@ -49,18 +54,19 @@ def fetch_alpha_daily(symbol):
                 df.index = pd.to_datetime(df.index)
                 return df.sort_index()
     except Exception as e:
-        print(f"Error fetching Alpha Vantage data for {symbol}:", e)
+        st.warning(f"Alpha Vantage data fetch failed for {symbol}.")
     return pd.DataFrame()
 
 # -------------------- SCORING ENGINE --------------------
-def score_stocks(df):
+def score_stocks(df, symbol_col="symbol", price_col="regularMarketPrice",
+                 change_col="regularMarketChangePercent", volume_col="regularMarketVolume"):
     scored = []
     if not df.empty:
         for _, row in df.iterrows():
-            symbol = row.get("symbol")
-            price = row.get("price", 0)
-            change_pct = row.get("change", 0)
-            volume = row.get("volume", 0)
+            symbol = row.get(symbol_col)
+            price = row.get(price_col, 0)
+            change_pct = row.get(change_col, 0)
+            volume = row.get(volume_col, 0)
 
             score_change = min(abs(change_pct) / 10, 1)
             score_volume = min(volume / 1_000_000, 1)
@@ -78,15 +84,18 @@ def score_stocks(df):
 # -------------------- STREAMLIT UI --------------------
 def main():
     st.set_page_config(page_title="Tadi's Market Scanner", layout="wide")
-    st_autorefresh(interval=60000, limit=None, key="refresh")
+    st_autorefresh(interval=60000, limit=100, key="refresh")
 
     st.title("📈 Tadi's Market Scanner")
-    st.caption("Powered by Finnhub (movers) + Alpha Vantage (OHLC charts) + Polygon.io (news)")
+    st.caption("Secured and optimized with caching, secrets, and quota protection")
 
     tab_movers, tab_charts, tab_news = st.tabs(["📊 Market Movers", "📈 Charts", "📰 News"])
 
     # Fetch data
-    gainers, losers, active = fetch_finnhub_movers()
+    gainers = fetch_yahoo_movers("gainers")
+    losers = fetch_yahoo_movers("losers")
+    active = fetch_yahoo_movers("mostactive")
+
     scored_gainers = score_stocks(gainers)
     scored_losers = score_stocks(losers)
 
@@ -113,7 +122,7 @@ def main():
             else:
                 st.info("No losers data available right now.")
 
-        st.subheader("🔥 Most Active Stocks")
+        st.subheader("🔥 Most Active")
         if not active.empty:
             st.dataframe(active, use_container_width=True)
         else:
@@ -174,6 +183,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
 
 
 
