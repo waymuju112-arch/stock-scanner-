@@ -1,4 +1,4 @@
-# hybrid_scanner_polygon_alpha.py
+# scanner_watchlist_alpha_news.py
 
 import streamlit as st
 import pandas as pd
@@ -6,28 +6,9 @@ import requests
 from datetime import datetime
 
 # -------------------- CONFIG --------------------
-POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
 ALPHA_API_KEY = st.secrets["ALPHA_API_KEY"]
+POLYGON_API_KEY = st.secrets["POLYGON_API_KEY"]
 DEBUG_MODE = st.secrets.get("ADMIN_DEBUG", False)
-
-# -------------------- Polygon Movers --------------------
-@st.cache_data(ttl=900)  # cache for 15 minutes
-def fetch_polygon_movers(direction="gainers"):
-    url = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/{direction}?apiKey={POLYGON_API_KEY}"
-    try:
-        r = requests.get(url, timeout=10)
-        if DEBUG_MODE:
-            st.write(f"DEBUG Polygon {direction}:", r.status_code)
-            st.json(r.json())
-        if r.status_code == 200:
-            return pd.DataFrame(r.json().get("tickers", []))
-        elif r.status_code == 429:  # quota exceeded
-            st.warning("Polygon quota exceeded. Switching to fallback watchlist.")
-            return None
-    except Exception as e:
-        if DEBUG_MODE:
-            st.write(f"DEBUG ERROR Polygon {direction}:", e)
-    return None
 
 # -------------------- Alpha Vantage Intraday --------------------
 @st.cache_data(ttl=120)  # cache for 2 minutes
@@ -52,7 +33,7 @@ def fetch_alpha_intraday(symbol):
             st.write("DEBUG ERROR Alpha Intraday:", e)
     return pd.DataFrame()
 
-# -------------------- Fallback Watchlist Movers --------------------
+# -------------------- Compute Movers from Watchlist --------------------
 def compute_watchlist_movers(watchlist):
     movers = []
     for symbol in watchlist:
@@ -62,55 +43,63 @@ def compute_watchlist_movers(watchlist):
             prev = df.iloc[0]["4. close"]
             change_pct = ((latest - prev) / prev) * 100
             movers.append({"symbol": symbol, "latest": latest, "change_pct": change_pct})
-    return pd.DataFrame(movers)
+    movers_df = pd.DataFrame(movers)
+    if not movers_df.empty:
+        gainers = movers_df.sort_values("change_pct", ascending=False).head(5)
+        losers = movers_df.sort_values("change_pct", ascending=True).head(5)
+        return gainers, losers
+    return pd.DataFrame(), pd.DataFrame()
+
+# -------------------- Polygon News --------------------
+@st.cache_data(ttl=900)  # cache for 15 minutes
+def fetch_polygon_news():
+    url = f"https://api.polygon.io/v2/reference/news?apiKey={POLYGON_API_KEY}"
+    try:
+        r = requests.get(url, timeout=10)
+        if DEBUG_MODE:
+            st.write("DEBUG Polygon News:", r.status_code)
+            st.json(r.json())
+        if r.status_code == 200 and "application/json" in r.headers.get("Content-Type", ""):
+            return r.json().get("results", [])
+    except Exception as e:
+        if DEBUG_MODE:
+            st.write("DEBUG ERROR Polygon News:", e)
+    return []
 
 # -------------------- STREAMLIT UI --------------------
 def main():
-    st.set_page_config(page_title="Hybrid Market Scanner", layout="wide")
+    st.set_page_config(page_title="Watchlist Market Scanner", layout="wide")
 
-    st.title("📈 Hybrid Market Scanner")
-    st.caption("Polygon movers + Alpha Vantage intraday, with fallback watchlist")
+    st.title("📈 Watchlist Market Scanner")
+    st.caption("Alpha Vantage intraday movers + Polygon news")
 
     last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.markdown(f"**Last Updated:** {last_updated}")
 
-    # Manual refresh button
-    if st.button("🔄 Refresh Movers"):
-        st.cache_data.clear()  # clear cache to force fresh fetch
+    tab_movers, tab_charts, tab_news = st.tabs(["📊 Watchlist Movers", "📈 Charts", "📰 News"])
 
-    tab_movers, tab_charts = st.tabs(["📊 Market Movers", "📈 Charts"])
-
-    # Fetch movers
-    gainers = fetch_polygon_movers("gainers")
-    losers = fetch_polygon_movers("losers")
-
-    # Fallback if quota exceeded
-    if gainers is None or losers is None:
-        watchlist = ["AAPL", "MSFT", "TSLA", "AMZN", "NVDA"]  # customizable
-        st.info("Using fallback watchlist movers")
-        gainers = compute_watchlist_movers(watchlist)
-        losers = pd.DataFrame()  # optional
+    # Curated watchlist (customize here)
+    watchlist = ["AAPL", "MSFT", "TSLA", "AMZN", "NVDA"]
 
     # Movers Tab
     with tab_movers:
-        st.header("Top Market Movers")
-        col1, col2 = st.columns(2)
+        st.header("Watchlist Movers")
+        gainers, losers = compute_watchlist_movers(watchlist)
 
+        col1, col2 = st.columns(2)
         with col1:
             st.subheader("🚀 Gainers")
-            if gainers is not None and not gainers.empty:
+            if not gainers.empty:
                 st.dataframe(gainers, use_container_width=True)
-                if "change_pct" in gainers.columns:
-                    st.bar_chart(gainers.set_index("symbol")["change_pct"].head(10))
+                st.bar_chart(gainers.set_index("symbol")["change_pct"])
             else:
                 st.info("No gainers data available.")
 
         with col2:
             st.subheader("📉 Losers")
-            if losers is not None and not losers.empty:
+            if not losers.empty:
                 st.dataframe(losers, use_container_width=True)
-                if "change_pct" in losers.columns:
-                    st.bar_chart(losers.set_index("symbol")["change_pct"].head(10))
+                st.bar_chart(losers.set_index("symbol")["change_pct"])
             else:
                 st.info("No losers data available.")
 
@@ -124,10 +113,25 @@ def main():
         else:
             st.info(f"No intraday data available for {symbol}.")
 
+    # News Tab
+    with tab_news:
+        st.header("Latest Market News")
+        news = fetch_polygon_news()
+        if news:
+            for article in news[:10]:
+                with st.expander(article.get("title", "News Item")):
+                    image_url = article.get("image_url")
+                    if image_url:
+                        st.image(image_url, width=200)
+                    st.write(article.get("description", ""))
+                    url = article.get("article_url")
+                    if url:
+                        st.markdown(f"[Read more]({url})")
+        else:
+            st.info("No news available right now.")
+
 if __name__ == "__main__":
     main()
-
-
 
 
 
