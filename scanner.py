@@ -32,16 +32,16 @@ def fetch_finnhub_profile(symbol):
         print(f"Error fetching Finnhub profile for {symbol}:", e)
     return {}
 
-# -------------------- FINNHUB NEWS --------------------
-def fetch_finnhub_news():
-    """Fetch latest market news from Finnhub.io"""
-    url = f"https://finnhub.io/api/v1/news?category=general&token={FINNHUB_API_KEY}"
+# -------------------- POLYGON NEWS --------------------
+def fetch_polygon_news():
+    """Fetch latest market news from Polygon.io"""
+    url = f"https://api.polygon.io/v2/reference/news?apiKey={POLYGON_API_KEY}"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
-            return response.json()
+            return response.json().get("results", [])
     except Exception as e:
-        print("Error fetching Finnhub news:", e)
+        print("Error fetching Polygon news:", e)
     return []
 
 # -------------------- SCORING ENGINE --------------------
@@ -54,19 +54,20 @@ def score_stocks(movers, vol_thresh, change_thresh, price_min, price_max, float_
         volume = float(stock.get("day", {}).get("v", 0))
         prev_volume = float(stock.get("prevDay", {}).get("v", 1))
 
-        # Enrich float data from Finnhub
+        # Enrich float data from Finnhub (fallback to 1 if missing)
         profile = fetch_finnhub_profile(symbol)
-        float_shares = float(profile.get("shareOutstanding", 0))
+        float_shares = float(profile.get("shareOutstanding", 1))
 
         volume_ratio = volume / prev_volume if prev_volume > 0 else 0
 
-        # Score each metric (0–1 scale)
+        # Weighted scoring (volume + change are most important)
         score_vol = min(volume_ratio / vol_thresh, 1)
         score_change = min(change_pct / change_thresh, 1)
         score_price = 1 if price_min <= price <= price_max else 0
-        score_float = min(float_max / float_shares, 1) if float_shares > 0 else 0
+        score_float = min(float_max / float_shares, 1)
 
-        match_score = round((score_vol + score_change + score_price + score_float) / 4 * 100, 2)
+        # Weighted average: 40% volume, 40% change, 10% price, 10% float
+        match_score = round((score_vol*0.4 + score_change*0.4 + score_price*0.1 + score_float*0.1) * 100, 2)
 
         scored.append({
             "Symbol": symbol,
@@ -93,7 +94,7 @@ def main():
     st_autorefresh(interval=60000, limit=None, key="refresh")
 
     st.title("📈 Tadi's Market Scanner")
-    st.caption("Powered by Polygon.io (movers) + Finnhub.io (float & news)")
+    st.caption("Powered by Polygon.io (movers + news) + Finnhub.io (float data)")
 
     tab_filters, tab_stocks, tab_analytics, tab_news = st.tabs(["⚙️ Filters", "🚀 Stocks", "📊 Analytics", "📰 News"])
 
@@ -109,6 +110,7 @@ def main():
     movers = fetch_polygon_movers()
     scored = score_stocks(movers, vol_thresh, change_thresh, price_min, price_max, float_max)
     exact_matches = [s for s in scored if s["Match %"] == 100]
+    near_misses = [s for s in scored if 80 <= s["Match %"] < 100]
     top_matches = sorted(scored, key=lambda x: x["Match %"], reverse=True)[:10]
 
     # Stocks Tab
@@ -123,7 +125,16 @@ def main():
                     plot_trend(stock['Symbol'])
                     st.divider()
         else:
-            st.info("No stocks meet all criteria. Check Analytics tab for near matches.")
+            st.info("No stocks meet all criteria.")
+
+        # Near Misses Section
+        if near_misses:
+            st.subheader("⚡ Near Misses (80–99% Match)")
+            for stock in near_misses:
+                with st.container():
+                    st.write(f"{stock['Symbol']} — {stock['Match %']}% match | Price: ${stock['Price']} | Change: {stock['Change (%)']}%")
+                    st.write(f"Volume Ratio: {stock['Volume Ratio']} | Volume: {stock['Volume']:,} | Float: {stock['Float']:,}")
+                    st.divider()
 
     # Analytics Tab
     with tab_analytics:
@@ -134,11 +145,11 @@ def main():
     # News Tab
     with tab_news:
         st.header("Latest Market News")
-        news = fetch_finnhub_news()
+        news = fetch_polygon_news()
         if news:
             for article in news[:10]:
-                with st.expander(article.get("headline", "News Item")):
-                    st.write(article.get("summary", ""))
+                with st.expander(article.get("title", "News Item")):
+                    st.write(article.get("description", ""))
                     url = article.get("url")
                     if url:
                         st.markdown(f"[Read more]({url})")
@@ -146,8 +157,5 @@ def main():
             st.info("No news available right now.")
 
 if __name__ == "__main__":
-    main()
-
-
 
 
