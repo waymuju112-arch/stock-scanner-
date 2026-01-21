@@ -7,7 +7,7 @@ from streamlit_autorefresh import st_autorefresh
 
 # -------------------- CONFIG --------------------
 BENZINGA_API_KEY = "bz.WTQQ73ASIU4DILGULR76RAWSOFSRU2XU"
-NEWS_API_KEY = "pub_08ee44a47dff4904afbb1f82899a98d7"  
+NEWS_API_KEY = "pub_08ee44a47dff4904afbb1f82899a98d7" 
 
 # -------------------- BENZINGA DATA FETCH --------------------
 def fetch_market_data():
@@ -17,31 +17,40 @@ def fetch_market_data():
         response = requests.get(url, timeout=10)
         if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
             return response.json().get("movers", [])
-    except Exception:
+        else:
+            print("Benzinga movers raw response:", response.text[:200])  # log first 200 chars
+    except Exception as e:
+        print("Error fetching Benzinga movers:", e)
         return []
     return []
 
 def fetch_benzinga_news():
     """Fetch latest market news headlines from Benzinga safely."""
-    url = f"https://api.benzinga.com/api/v2/news?token={BENZINGA_API_KEY}&channels=markets&limit=10"
+    url = f"https://api.benzinga.com/api/v2/news?token={BENZINGA_API_KEY}&limit=10"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
             data = response.json()
             if data:
                 return data
-    except Exception:
+        else:
+            print("Benzinga news raw response:", response.text[:200])
+    except Exception as e:
+        print("Error fetching Benzinga news:", e)
         return []
     return []
 
 def fetch_news_fallback():
     """Fallback to NewsAPI.org if Benzinga returns nothing or invalid JSON."""
-    url = f"https://newsapi.org/v2/top-headlines?category=business&apiKey={NEWS_API_KEY}&pageSize=10"
+    url = f"https://newsapi.org/v2/everything?q=stock%20market&apiKey={NEWS_API_KEY}&pageSize=10"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200 and "application/json" in response.headers.get("Content-Type", ""):
             return response.json().get("articles", [])
-    except Exception:
+        else:
+            print("NewsAPI raw response:", response.text[:200])
+    except Exception as e:
+        print("Error fetching NewsAPI:", e)
         return []
     return []
 
@@ -89,7 +98,7 @@ def show_criteria():
     - Demand: Relative Volume threshold (adjustable)  
     - Demand: % Change threshold (adjustable)  
     - Demand: Price range (adjustable)  
-    - Supply: Float max (adjustable)  
+    - Supply: Float max (adjustable, now capped at 5M)  
     """)
 
 def main():
@@ -110,7 +119,7 @@ def main():
         vol_ratio_thresh = st.slider("Relative Volume (x)", 1, 10, 5)
         change_thresh = st.slider("Daily % Change", 0, 100, 30)
         price_min, price_max = st.slider("Price Range ($)", 1, 50, (3, 20))
-        float_max = st.slider("Max Float (shares)", 1_000_000, 50_000_000, 5_000_000, step=1_000_000)
+        float_max = st.slider("Max Float (shares)", 0, 5_000_000, 5_000_000, step=100_000)
 
     # Middle: Filtered Stocks
     with col2:
@@ -146,7 +155,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
 
 
