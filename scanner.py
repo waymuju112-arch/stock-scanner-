@@ -5,10 +5,11 @@ import smtplib
 from email.mime.text import MIMEText
 
 # --- CONFIG ---
-API_KEY = os.getenv("ALPHAVANTAGE_KEY")  # store securely in environment
-EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASS = os.getenv("EMAIL_PASS")
-EMAIL_TO   = os.getenv("EMAIL_TO")
+API_KEY    = st.secrets["ALPHAVANTAGE_KEY"]
+EMAIL_USER = st.secrets["EMAIL_USER"]
+EMAIL_PASS = st.secrets["EMAIL_PASS"]
+EMAIL_TO   = st.secrets["EMAIL_TO"]
+
 
 # --- EMAIL ALERT FUNCTION ---
 def send_email_alert(subject, body, to_email):
